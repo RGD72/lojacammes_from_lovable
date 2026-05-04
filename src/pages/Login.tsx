@@ -27,13 +27,9 @@ export default function Login() {
   useEffect(() => {
     let cancel = false;
     (async () => {
-      // count returns 0 for clients without admin role due to RLS, but bootstrap-admin enforces server-side
-      const { count } = await supabase
-        .from("user_roles")
-        .select("*", { count: "exact", head: true })
-        .eq("role", "admin");
+      const { data } = await supabase.rpc("admin_exists");
       if (!cancel) {
-        setNeedsBootstrap((count ?? 0) === 0);
+        setNeedsBootstrap(!data);
         setChecking(false);
       }
     })();
