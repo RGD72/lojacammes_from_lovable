@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -24,9 +24,48 @@ export function UploadCatalogDialog({
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState("");
+  const cancelRef = useRef(false);
+  const brandIdRef = useRef<string | null>(null);
+  const pdfPathRef = useRef<string | null>(null);
 
   const reset = () => {
     setName(""); setFile(null); setBusy(false); setProgress(0); setStage("");
+    cancelRef.current = false;
+    brandIdRef.current = null;
+    pdfPathRef.current = null;
+  };
+
+  const cleanup = async () => {
+    try {
+      if (pdfPathRef.current) {
+        await supabase.storage.from("catalogs").remove([pdfPathRef.current]);
+      }
+      if (brandIdRef.current) {
+        // remove rendered pages folder
+        const { data: list } = await supabase.storage
+          .from("catalog-pages")
+          .list(brandIdRef.current);
+        if (list && list.length) {
+          await supabase.storage
+            .from("catalog-pages")
+            .remove(list.map((f) => `${brandIdRef.current}/${f.name}`));
+        }
+        await supabase.from("products").delete().eq("brand_id", brandIdRef.current);
+        await supabase.from("brands").delete().eq("id", brandIdRef.current);
+      }
+    } catch (err) {
+      console.error("cleanup error", err);
+    }
+  };
+
+  const handleCancel = async () => {
+    cancelRef.current = true;
+    setStage("Cancelando…");
+    await cleanup();
+    toast.info("Processamento cancelado");
+    onCreated();
+    onOpenChange(false);
+    reset();
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -45,6 +84,8 @@ export function UploadCatalogDialog({
         .select()
         .single();
       if (bErr || !brand) throw bErr ?? new Error("erro ao criar marca");
+      brandIdRef.current = brand.id;
+      if (cancelRef.current) throw new Error("__cancelled__");
 
       setStage("Enviando PDF…");
       const safeName = file.name
@@ -57,15 +98,19 @@ export function UploadCatalogDialog({
         .from("catalogs")
         .upload(pdfPath, file, { contentType: "application/pdf", upsert: true });
       if (upErr) throw upErr;
+      pdfPathRef.current = pdfPath;
+      if (cancelRef.current) throw new Error("__cancelled__");
       const { data: pub } = supabase.storage.from("catalogs").getPublicUrl(pdfPath);
       await supabase.from("brands").update({ catalog_pdf_url: pub.publicUrl }).eq("id", brand.id);
 
       setStage("Renderizando páginas…");
       const { totalPages, pageImageBase64 } = await renderPdfPages(file);
+      if (cancelRef.current) throw new Error("__cancelled__");
       await supabase.from("brands").update({ total_pages: totalPages }).eq("id", brand.id);
 
       // Process pages sequentially to respect rate limits
       for (let p = 1; p <= totalPages; p++) {
+        if (cancelRef.current) throw new Error("__cancelled__");
         setStage(`Analisando página ${p}/${totalPages}…`);
         setProgress(Math.round(((p - 1) / totalPages) * 100));
         const b64 = await pageImageBase64(p);
@@ -91,8 +136,16 @@ export function UploadCatalogDialog({
       onOpenChange(false);
       reset();
     } catch (e) {
-      console.error(e);
-      toast.error(e instanceof Error ? e.message : "Falha ao processar catálogo");
+      if (e instanceof Error && e.message === "__cancelled__") {
+        await cleanup();
+        toast.info("Processamento cancelado");
+        onCreated();
+        onOpenChange(false);
+        reset();
+      } else {
+        console.error(e);
+        toast.error(e instanceof Error ? e.message : "Falha ao processar catálogo");
+      }
     } finally {
       setBusy(false);
     }
@@ -126,9 +179,21 @@ export function UploadCatalogDialog({
               <p className="text-xs text-muted-foreground">{stage}</p>
             </div>
           )}
-          <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? "Processando…" : "Processar catálogo"}
-          </Button>
+          <div className="flex gap-2">
+            <Button type="submit" className="flex-1" disabled={busy}>
+              {busy ? "Processando…" : "Processar catálogo"}
+            </Button>
+            {busy && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                disabled={cancelRef.current}
+              >
+                Cancelar
+              </Button>
+            )}
+          </div>
         </form>
       </DialogContent>
     </Dialog>
