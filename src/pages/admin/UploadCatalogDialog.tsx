@@ -47,7 +47,12 @@ export function UploadCatalogDialog({
       if (bErr || !brand) throw bErr ?? new Error("erro ao criar marca");
 
       setStage("Enviando PDF…");
-      const pdfPath = `${brand.id}/${file.name}`;
+      const safeName = file.name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9._-]+/g, "_")
+        .replace(/_+/g, "_");
+      const pdfPath = `${brand.id}/${safeName}`;
       const { error: upErr } = await supabase.storage
         .from("catalogs")
         .upload(pdfPath, file, { contentType: "application/pdf", upsert: true });
