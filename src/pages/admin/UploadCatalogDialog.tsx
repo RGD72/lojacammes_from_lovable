@@ -7,6 +7,17 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { renderPdfPages } from "@/lib/pdf";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const MAX_BYTES = 50 * 1024 * 1024;
 
@@ -184,14 +195,25 @@ export function UploadCatalogDialog({
               {busy ? "Processando…" : "Processar catálogo"}
             </Button>
             {busy && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleCancel}
-                disabled={cancelRef.current}
-              >
-                Cancelar
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button type="button" variant="outline" disabled={cancelRef.current}>
+                    Cancelar
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Cancelar processamento?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      O upload e os dados parciais desta vitrine serão descartados. Esta ação não pode ser desfeita.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Continuar processando</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleCancel}>Sim, cancelar</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
         </form>
