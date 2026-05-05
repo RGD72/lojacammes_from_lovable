@@ -16,16 +16,33 @@ export async function renderPdfPages(
 
   const pageImageBase64 = async (n: number): Promise<string> => {
     const page = await doc.getPage(n);
-    const viewport = page.getViewport({ scale: 2 });
+    const viewport = page.getViewport({ scale: 1.5 });
     const canvas = document.createElement("canvas");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const ctx = canvas.getContext("2d")!;
     await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
     onProgress?.(n, totalPages);
     return dataUrl.split(",")[1];
   };
 
-  return { totalPages, pageImageBase64 };
+  const pageImageBlob = async (n: number): Promise<Blob> => {
+    const page = await doc.getPage(n);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d")!;
+    await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+        "image/jpeg",
+        0.8,
+      );
+    });
+  };
+
+  return { totalPages, pageImageBase64, pageImageBlob };
 }
