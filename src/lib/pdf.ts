@@ -9,7 +9,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 export async function renderPdfPages(
   file: File,
   onProgress?: (page: number, total: number) => void,
-): Promise<{ totalPages: number; pageImageBase64: (n: number) => Promise<string> }> {
+): Promise<{
+  totalPages: number;
+  pageImageBase64: (n: number) => Promise<string>;
+  pageImageBlob: (n: number) => Promise<Blob>;
+}> {
   const buf = await file.arrayBuffer();
   const doc = await pdfjsLib.getDocument({ data: buf }).promise;
   const totalPages = doc.numPages;
