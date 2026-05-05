@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Trash2, ArrowLeft, Save } from "lucide-react";
+import { Trash2, ArrowLeft, Save, LogOut } from "lucide-react";
 
 interface Product {
   id: string;
@@ -51,9 +51,16 @@ export default function AdminBrandEdit() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">
-      <Link to="/admin" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4">
-        <ArrowLeft className="h-4 w-4 mr-1" /> Vitrines
-      </Link>
+      <div className="flex items-center justify-between mb-4">
+        <Link to="/admin" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Vitrines
+        </Link>
+        <Link to="/admin">
+          <Button variant="outline" size="sm">
+            <LogOut className="h-4 w-4 mr-1" /> Sair da edição
+          </Button>
+        </Link>
+      </div>
       <h1 className="font-display text-4xl mb-6">{brandName}</h1>
       <div className="bg-card border border-border rounded p-4 mb-6 flex items-end gap-3 max-w-md">
         <div className="flex-1 space-y-1">

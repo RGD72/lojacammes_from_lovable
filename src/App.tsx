@@ -63,6 +63,14 @@ const App = () => (
                 }
               />
               <Route
+                path="/admin/brands/:id/preview"
+                element={
+                  <ProtectedRoute requireRole="admin">
+                    <AppShell><BrandShowcase /></AppShell>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/admin/clients"
                 element={
                   <ProtectedRoute requireRole="admin">
