@@ -8,8 +8,7 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `You analyze fashion catalog pages and extract every product visible.
-Return STRICT JSON via the provided tool. For each product include reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), and price as a number (0 if unknown).
-If a field is unknown, use empty string or empty array; price 0. Multiple products on the same page belong to the same look.`;
+Return STRICT JSON via the provided tool. ONLY include products whose reference (SKU/code) is clearly written/visible on the page. If no reference text is visible for an item, DO NOT include it. For each included product return reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), and price as a number (0 if unknown). If a non-reference field is unknown, use empty string or empty array; price 0. Multiple products on the same page belong to the same look.`;
 
 const TOOL = {
   type: "function",
@@ -136,19 +135,21 @@ Deno.serve(async (req) => {
     }
 
     const lookId = `look-${page_number}`;
-    const rows = products.map((p, i) => ({
-      brand_id,
-      page_number,
-      look_id: lookId,
-      reference: String(p.reference ?? ""),
-      description: String(p.description ?? ""),
-      material: String(p.material ?? ""),
-      colors: Array.isArray(p.colors) ? p.colors.map(String) : [],
-      sizes: Array.isArray(p.sizes) ? p.sizes.map(String) : [],
-      price: Number(p.price ?? 0) || 0,
-      image_url: pageUrl,
-      sort_order: page_number * 100 + i,
-    }));
+    const rows = products
+      .filter((p) => String(p?.reference ?? "").trim().length > 0)
+      .map((p, i) => ({
+        brand_id,
+        page_number,
+        look_id: lookId,
+        reference: String(p.reference).trim(),
+        description: String(p.description ?? ""),
+        material: String(p.material ?? ""),
+        colors: Array.isArray(p.colors) ? p.colors.map(String) : [],
+        sizes: Array.isArray(p.sizes) ? p.sizes.map(String) : [],
+        price: Number(p.price ?? 0) || 0,
+        image_url: pageUrl,
+        sort_order: page_number * 100 + i,
+      }));
 
     if (rows.length > 0) {
       const { error: insErr } = await admin.from("products").insert(rows);

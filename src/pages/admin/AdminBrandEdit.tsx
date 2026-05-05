@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Trash2, ArrowLeft } from "lucide-react";
+import { Trash2, ArrowLeft, Save } from "lucide-react";
 
 interface Product {
   id: string;
@@ -37,11 +37,6 @@ export default function AdminBrandEdit() {
   };
   useEffect(() => { load(); }, [id]);
 
-  const update = async (pid: string, patch: Partial<Product>) => {
-    const { error } = await supabase.from("products").update(patch).eq("id", pid);
-    if (error) toast.error(error.message);
-    else setItems((s) => s.map((x) => (x.id === pid ? { ...x, ...patch } : x)));
-  };
   const remove = async (pid: string) => {
     if (!confirm("Remover este produto?")) return;
     const { error } = await supabase.from("products").delete().eq("id", pid);
@@ -59,37 +54,14 @@ export default function AdminBrandEdit() {
       <h1 className="font-display text-4xl mb-8">{brandName}</h1>
       <div className="space-y-3">
         {items.map((p) => (
-          <div key={p.id} className="bg-card border border-border rounded p-4 grid grid-cols-12 gap-3 items-start">
-            <div className="col-span-2">
-              {p.image_url && <img src={p.image_url} alt="" className="w-full aspect-square object-cover rounded" />}
-              <p className="text-[10px] tracking-editorial text-muted-foreground mt-1">Look {p.page_number}</p>
-            </div>
-            <div className="col-span-10 grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Field label="Referência" value={p.reference} onChange={(v) => update(p.id, { reference: v })} />
-              <Field label="Descrição" value={p.description} onChange={(v) => update(p.id, { description: v })} />
-              <Field label="Material" value={p.material} onChange={(v) => update(p.id, { material: v })} />
-              <Field
-                label="Preço"
-                value={String(p.price)}
-                onChange={(v) => update(p.id, { price: Number(v) || 0 })}
-              />
-              <Field
-                label="Cores (vírgula)"
-                value={p.colors.join(", ")}
-                onChange={(v) => update(p.id, { colors: v.split(",").map((x) => x.trim()).filter(Boolean) })}
-              />
-              <Field
-                label="Tamanhos (vírgula)"
-                value={p.sizes.join(", ")}
-                onChange={(v) => update(p.id, { sizes: v.split(",").map((x) => x.trim()).filter(Boolean) })}
-              />
-              <div className="flex items-end justify-end col-span-2 lg:col-span-4">
-                <Button variant="ghost" size="sm" onClick={() => remove(p.id)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
+          <ProductRow
+            key={p.id}
+            product={p}
+            onSaved={(updated) =>
+              setItems((s) => s.map((x) => (x.id === updated.id ? updated : x)))
+            }
+            onRemove={() => remove(p.id)}
+          />
         ))}
         {items.length === 0 && (
           <p className="text-muted-foreground">Nenhum produto extraído ainda.</p>
@@ -100,12 +72,87 @@ export default function AdminBrandEdit() {
 }
 
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const [v, setV] = useState(value);
-  useEffect(() => setV(value), [value]);
   return (
     <div className="space-y-1">
       <label className="text-[10px] tracking-editorial text-muted-foreground">{label}</label>
-      <Input value={v} onChange={(e) => setV(e.target.value)} onBlur={() => v !== value && onChange(v)} />
+      <Input value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function ProductRow({
+  product,
+  onSaved,
+  onRemove,
+}: {
+  product: Product;
+  onSaved: (p: Product) => void;
+  onRemove: () => void;
+}) {
+  const [draft, setDraft] = useState<Product>(product);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setDraft(product), [product]);
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(product);
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from("products")
+      .update({
+        reference: draft.reference,
+        description: draft.description,
+        material: draft.material,
+        colors: draft.colors,
+        sizes: draft.sizes,
+        price: draft.price,
+      })
+      .eq("id", draft.id);
+    setSaving(false);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Alterações salvas");
+      onSaved(draft);
+    }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded p-4 grid grid-cols-12 gap-3 items-start">
+      <div className="col-span-2">
+        {draft.image_url && (
+          <img src={draft.image_url} alt="" className="w-full aspect-square object-cover rounded" />
+        )}
+        <p className="text-[10px] tracking-editorial text-muted-foreground mt-1">Look {draft.page_number}</p>
+      </div>
+      <div className="col-span-10 grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Field label="Referência" value={draft.reference} onChange={(v) => setDraft({ ...draft, reference: v })} />
+        <Field label="Descrição" value={draft.description} onChange={(v) => setDraft({ ...draft, description: v })} />
+        <Field label="Material" value={draft.material} onChange={(v) => setDraft({ ...draft, material: v })} />
+        <Field
+          label="Preço"
+          value={String(draft.price)}
+          onChange={(v) => setDraft({ ...draft, price: Number(v) || 0 })}
+        />
+        <Field
+          label="Cores (vírgula)"
+          value={draft.colors.join(", ")}
+          onChange={(v) => setDraft({ ...draft, colors: v.split(",").map((x) => x.trim()).filter(Boolean) })}
+        />
+        <Field
+          label="Tamanhos (vírgula)"
+          value={draft.sizes.join(", ")}
+          onChange={(v) => setDraft({ ...draft, sizes: v.split(",").map((x) => x.trim()).filter(Boolean) })}
+        />
+        <div className="flex items-end justify-end gap-2 col-span-2 lg:col-span-4">
+          <Button variant="ghost" size="sm" onClick={onRemove}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+          <Button size="sm" onClick={save} disabled={!dirty || saving}>
+            <Save className="h-4 w-4" />
+            {saving ? "Salvando…" : "Salvar"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
