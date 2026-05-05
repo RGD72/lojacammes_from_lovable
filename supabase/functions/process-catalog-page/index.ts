@@ -136,19 +136,21 @@ Deno.serve(async (req) => {
     }
 
     const lookId = `look-${page_number}`;
-    const rows = products.map((p, i) => ({
-      brand_id,
-      page_number,
-      look_id: lookId,
-      reference: String(p.reference ?? ""),
-      description: String(p.description ?? ""),
-      material: String(p.material ?? ""),
-      colors: Array.isArray(p.colors) ? p.colors.map(String) : [],
-      sizes: Array.isArray(p.sizes) ? p.sizes.map(String) : [],
-      price: Number(p.price ?? 0) || 0,
-      image_url: pageUrl,
-      sort_order: page_number * 100 + i,
-    }));
+    const rows = products
+      .filter((p) => String(p?.reference ?? "").trim().length > 0)
+      .map((p, i) => ({
+        brand_id,
+        page_number,
+        look_id: lookId,
+        reference: String(p.reference).trim(),
+        description: String(p.description ?? ""),
+        material: String(p.material ?? ""),
+        colors: Array.isArray(p.colors) ? p.colors.map(String) : [],
+        sizes: Array.isArray(p.sizes) ? p.sizes.map(String) : [],
+        price: Number(p.price ?? 0) || 0,
+        image_url: pageUrl,
+        sort_order: page_number * 100 + i,
+      }));
 
     if (rows.length > 0) {
       const { error: insErr } = await admin.from("products").insert(rows);
