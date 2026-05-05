@@ -120,3 +120,31 @@ export function ProductDialog({
     </Dialog>
   );
 }
+
+function DialogGallery({ product }: { product: Product }) {
+  const imgs = (product.image_urls && product.image_urls.length > 0)
+    ? product.image_urls
+    : (product.image_url ? [product.image_url] : []);
+  if (imgs.length === 0) {
+    return <div className="aspect-[3/4] bg-secondary rounded" />;
+  }
+  if (imgs.length === 1) {
+    return (
+      <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
+        <img src={imgs[0]} alt={product.reference} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div className="aspect-[3/4] bg-secondary overflow-x-auto overflow-y-hidden rounded snap-x snap-mandatory flex">
+      {imgs.map((u, i) => (
+        <img
+          key={i}
+          src={u}
+          alt={`${product.reference} ${i + 1}`}
+          className="h-full w-full flex-none object-cover snap-center"
+        />
+      ))}
+    </div>
+  );
+}
