@@ -8,7 +8,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { Plus, KeyRound, Trash2 } from "lucide-react";
 
-interface Client { id: string; email: string; name: string; active: boolean; created_at: string; }
+interface Client { id: string; email: string; name: string; phone: string; active: boolean; created_at: string; }
+
+function formatPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 2) return d;
+  if (d.length <= 7) return `${d.slice(0, 2)}-${d.slice(2)}`;
+  return `${d.slice(0, 2)}-${d.slice(2, 7)}-${d.slice(7)}`;
+}
 
 export default function AdminClients() {
   const [list, setList] = useState<Client[]>([]);
@@ -65,6 +72,7 @@ export default function AdminClients() {
               <tr className="text-left">
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Nome</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Email</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Telefone</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Cadastro</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Ativo</th>
                 <th className="px-4 py-3" />
@@ -75,6 +83,7 @@ export default function AdminClients() {
                 <tr key={c.id} className="border-t border-border">
                   <td className="px-4 py-3">{c.name || "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{c.email}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{c.phone || "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{new Date(c.created_at).toLocaleDateString("pt-BR")}</td>
                   <td className="px-4 py-3"><Switch checked={c.active} onCheckedChange={(v) => toggleActive(c, v)} /></td>
                   <td className="px-4 py-3 text-right">
@@ -97,21 +106,24 @@ export default function AdminClients() {
 function NewClientDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password.length < 6) return toast.error("Senha precisa ter ao menos 6 caracteres");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length !== 11) return toast.error("Telefone deve ter 11 dígitos (xx-xxxxx-xxxx)");
     setBusy(true);
     const { error, data } = await supabase.functions.invoke("admin-create-user", {
-      body: { name, email, password, role: "client", active: true },
+      body: { name, email, phone, password, role: "client", active: true },
     });
     setBusy(false);
     const errMsg = (data as { error?: string })?.error ?? error?.message;
     if (errMsg) return toast.error(errMsg);
     toast.success("Cliente criado");
-    setName(""); setEmail(""); setPassword("");
+    setName(""); setEmail(""); setPhone(""); setPassword("");
     onOpenChange(false);
     onCreated();
   };
@@ -123,6 +135,17 @@ function NewClientDialog({ open, onOpenChange, onCreated }: { open: boolean; onO
         <form onSubmit={submit} className="space-y-3">
           <div className="space-y-1.5"><Label>Nome</Label><Input value={name} onChange={(e) => setName(e.target.value)} required /></div>
           <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
+          <div className="space-y-1.5">
+            <Label>Telefone</Label>
+            <Input
+              type="tel"
+              inputMode="numeric"
+              value={phone}
+              onChange={(e) => setPhone(formatPhone(e.target.value))}
+              placeholder="xx-xxxxx-xxxx"
+              required
+            />
+          </div>
           <div className="space-y-1.5"><Label>Senha inicial</Label><Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} /></div>
           <Button type="submit" className="w-full" disabled={busy}>{busy ? "Criando…" : "Criar cliente"}</Button>
         </form>
