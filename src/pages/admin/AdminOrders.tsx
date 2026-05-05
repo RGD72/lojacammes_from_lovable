@@ -96,18 +96,22 @@ export default function AdminOrders() {
     const list: { order: Order; item: OrderItem }[] = [];
     for (const o of filteredOrders) {
       const its = allItems.filter((i) => i.order_id === o.id);
-      for (const i of its) list.push({ order: o, item: i });
+      for (const i of its) {
+        if (statusFilter !== "all" && i.status !== statusFilter) continue;
+        list.push({ order: o, item: i });
+      }
     }
     return list;
-  }, [filteredOrders, allItems]);
+  }, [filteredOrders, allItems, statusFilter]);
 
   const brandName = (id: string) => brands.find((b) => b.id === id)?.name ?? "—";
   const brandCommission = (id: string) => Number(brands.find((b) => b.id === id)?.commission_pct ?? 0);
 
-  const updateStatus = async (o: Order, status: Status) => {
-    const { error } = await supabase.from("orders").update({ status }).eq("id", o.id);
-    if (error) toast.error(error.message);
-    else toast.success("Status atualizado");
+  const updateItemStatus = async (item: OrderItem, status: Status) => {
+    const { error } = await supabase.from("order_items").update({ status }).eq("id", item.id);
+    if (error) return toast.error(error.message);
+    setAllItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, status } : x)));
+    toast.success("Status atualizado");
   };
 
   const exportCsv = async () => {
