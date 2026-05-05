@@ -75,20 +75,11 @@ Deno.serve(async (req) => {
       .eq("user_id", userData.user.id);
     if (!roles?.some((r) => r.role === "admin")) return json({ error: "Forbidden" }, 403);
 
-    const { brand_id, page_number, image_base64, total_pages, is_first } = await req.json();
-    if (!brand_id || !page_number || !image_base64) {
-      return json({ error: "brand_id, page_number, image_base64 required" }, 400);
+    const { brand_id, page_number, page_url, total_pages, is_first } = await req.json();
+    if (!brand_id || !page_number || !page_url) {
+      return json({ error: "brand_id, page_number, page_url required" }, 400);
     }
-
-    // Upload page image to storage
-    const pageBytes = decodeBase64(image_base64);
-    const pagePath = `${brand_id}/page-${String(page_number).padStart(4, "0")}.jpg`;
-    const { error: upErr } = await admin.storage
-      .from("catalog-pages")
-      .upload(pagePath, pageBytes, { contentType: "image/jpeg", upsert: true });
-    if (upErr) throw upErr;
-    const { data: pub } = admin.storage.from("catalog-pages").getPublicUrl(pagePath);
-    const pageUrl = pub.publicUrl;
+    const pageUrl: string = page_url;
 
     // First page becomes the cover
     if (is_first) {
@@ -113,7 +104,7 @@ Deno.serve(async (req) => {
             role: "user",
             content: [
               { type: "text", text: `Extract all products visible on page ${page_number}.` },
-              { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image_base64}` } },
+              { type: "image_url", image_url: { url: pageUrl } },
             ],
           },
         ],
