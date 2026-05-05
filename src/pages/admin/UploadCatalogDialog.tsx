@@ -126,7 +126,7 @@ export function UploadCatalogDialog({
       await supabase.from("brands").update({ catalog_pdf_url: pub.publicUrl }).eq("id", brand.id);
 
       setStage("Renderizando páginas…");
-      const { totalPages, pageImageBase64 } = await renderPdfPages(file);
+      const { totalPages, pageImageBlob } = await renderPdfPages(file);
       if (cancelRef.current) throw new Error("__cancelled__");
       await supabase.from("brands").update({ total_pages: totalPages }).eq("id", brand.id);
 
@@ -135,12 +135,22 @@ export function UploadCatalogDialog({
         if (cancelRef.current) throw new Error("__cancelled__");
         setStage(`Analisando página ${p}/${totalPages}…`);
         setProgress(Math.round(((p - 1) / totalPages) * 100));
-        const b64 = await pageImageBase64(p);
+        const blob = await pageImageBlob(p);
+        const pagePath = `${brand.id}/page-${String(p).padStart(4, "0")}.jpg`;
+        const { error: pUpErr } = await supabase.storage
+          .from("catalog-pages")
+          .upload(pagePath, blob, { contentType: "image/jpeg", upsert: true });
+        if (pUpErr) {
+          toast.error(`Página ${p}: falha ao enviar imagem`);
+          continue;
+        }
+        const { data: pPub } = supabase.storage.from("catalog-pages").getPublicUrl(pagePath);
         const { data, error } = await supabase.functions.invoke("process-catalog-page", {
           body: {
             brand_id: brand.id,
             page_number: p,
-            image_base64: b64,
+            page_url: pPub.publicUrl,
+            page_path: pagePath,
             total_pages: totalPages,
             is_first: p === 1,
           },
