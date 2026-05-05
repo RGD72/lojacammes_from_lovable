@@ -113,6 +113,39 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
+function ListField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string[];
+  onChange: (arr: string[]) => void;
+}) {
+  const [text, setText] = useState(value.join(", "));
+  const externalKey = value.join("|");
+  useEffect(() => {
+    const parsed = text.split(",").map((x) => x.trim()).filter(Boolean);
+    if (parsed.join("|") !== externalKey) {
+      setText(value.join(", "));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalKey]);
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] tracking-editorial text-muted-foreground">{label}</label>
+      <Input
+        value={text}
+        onChange={(e) => {
+          const v = e.target.value;
+          setText(v);
+          onChange(v.split(",").map((x) => x.trim()).filter(Boolean));
+        }}
+      />
+    </div>
+  );
+}
+
 function ProductRow({
   product,
   onSaved,
@@ -166,15 +199,15 @@ function ProductRow({
           value={String(draft.price)}
           onChange={(v) => setDraft({ ...draft, price: Number(v) || 0 })}
         />
-        <Field
+        <ListField
           label="Cores (vírgula)"
-          value={draft.colors.join(", ")}
-          onChange={(v) => setDraft({ ...draft, colors: v.split(",").map((x) => x.trim()).filter(Boolean) })}
+          value={draft.colors}
+          onChange={(arr) => setDraft({ ...draft, colors: arr })}
         />
-        <Field
+        <ListField
           label="Tamanhos (vírgula)"
-          value={draft.sizes.join(", ")}
-          onChange={(v) => setDraft({ ...draft, sizes: v.split(",").map((x) => x.trim()).filter(Boolean) })}
+          value={draft.sizes}
+          onChange={(arr) => setDraft({ ...draft, sizes: arr })}
         />
         <div className="flex items-end justify-end gap-2 col-span-2 lg:col-span-4">
           <Button variant="ghost" size="sm" onClick={onRemove}>
