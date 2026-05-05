@@ -120,3 +120,39 @@ export default function BrandShowcase() {
     </div>
   );
 }
+
+function ProductGallery({ product }: { product: Product }) {
+  const imgs = (product.image_urls && product.image_urls.length > 0)
+    ? product.image_urls
+    : (product.image_url ? [product.image_url] : []);
+  if (imgs.length === 0) {
+    return (
+      <div className="aspect-[3/4] bg-secondary overflow-hidden rounded flex items-center justify-center text-muted-foreground tracking-editorial text-[10px]">
+        sem imagem
+      </div>
+    );
+  }
+  if (imgs.length === 1) {
+    return (
+      <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
+        <img src={imgs[0]} alt={product.reference} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
+      </div>
+    );
+  }
+  return (
+    <div
+      className="aspect-[3/4] bg-secondary overflow-x-auto overflow-y-hidden rounded snap-x snap-mandatory flex"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {imgs.map((u, i) => (
+        <img
+          key={i}
+          src={u}
+          alt={`${product.reference} ${i + 1}`}
+          loading="lazy"
+          className="h-full w-full flex-none object-cover snap-center"
+        />
+      ))}
+    </div>
+  );
+}
