@@ -204,7 +204,7 @@ export default function AdminOrders() {
                 const total = Number(i.unit_price) * Number(i.quantity);
                 const totalC = total * (1 + brandCommission(o.brand_id) / 100);
                 return (
-                  <tr key={i.id} className="border-t border-border">
+                  <tr key={i.id} className={`border-t border-border ${o.status === "cancelled" ? "text-red-600 [&_*]:text-red-600" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{new Date(o.created_at).toLocaleString("pt-BR")}</td>
                     <td className="px-4 py-3">{o.client_name}</td>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{phones[o.user_id] ?? "—"}</td>
