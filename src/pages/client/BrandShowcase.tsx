@@ -140,10 +140,7 @@ function ProductGallery({ product }: { product: Product }) {
     );
   }
   return (
-    <div
-      className="aspect-[3/4] bg-secondary overflow-x-auto overflow-y-hidden rounded snap-x snap-mandatory flex"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className="aspect-[3/4] bg-secondary overflow-x-auto overflow-y-hidden rounded snap-x snap-mandatory flex">
       {imgs.map((u, i) => (
         <img
           key={i}
