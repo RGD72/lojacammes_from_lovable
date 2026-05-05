@@ -3,9 +3,13 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Eye, ArrowRight } from "lucide-react";
+import { Plus, Eye, ArrowRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { UploadCatalogDialog } from "./UploadCatalogDialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface Brand {
   id: string;
@@ -52,6 +56,14 @@ export default function AdminBrands() {
     const { error } = await supabase.from("brands").update({ status: next }).eq("id", b.id);
     if (error) toast.error(error.message);
     else toast.success(next === "published" ? "Vitrine publicada" : "Vitrine despublicada");
+  };
+
+  const removeBrand = async (b: Brand) => {
+    const { error: pErr } = await supabase.from("products").delete().eq("brand_id", b.id);
+    if (pErr) return toast.error(pErr.message);
+    const { error } = await supabase.from("brands").delete().eq("id", b.id);
+    if (error) toast.error(error.message);
+    else { toast.success("Vitrine apagada"); load(); }
   };
 
   return (
@@ -118,12 +130,33 @@ export default function AdminBrands() {
                     {new Date(b.created_at).toLocaleDateString("pt-BR")}
                   </p>
                 )}
-                <div className="flex items-center justify-between">
-                  <Link to={`/admin/brands/${b.id}`}>
-                    <Button variant="outline" size="sm">
-                      <Eye className="h-3.5 w-3.5 mr-1.5" /> Editar
-                    </Button>
-                  </Link>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Link to={`/admin/brands/${b.id}`}>
+                      <Button variant="outline" size="sm">
+                        <Eye className="h-3.5 w-3.5 mr-1.5" /> Editar
+                      </Button>
+                    </Link>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" aria-label="Apagar vitrine">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Apagar vitrine?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Esta ação remove definitivamente a vitrine "{b.name}" e todos os seus produtos. Não pode ser desfeita.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => removeBrand(b)}>Sim, apagar</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                   <label className="flex items-center gap-2 text-xs text-muted-foreground">
                     Publicada
                     <Switch
