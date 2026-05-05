@@ -24,6 +24,7 @@ interface Brand { id: string; name: string; commission_pct: number; }
 interface OrderItem {
   id: string; order_id: string; reference: string; description: string;
   color: string; size: string; quantity: number; unit_price: number;
+  status: Status;
 }
 interface ProfilePhone { id: string; phone: string | null; }
 
