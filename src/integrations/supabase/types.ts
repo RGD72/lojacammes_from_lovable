@@ -17,6 +17,7 @@ export type Database = {
       brands: {
         Row: {
           catalog_pdf_url: string | null
+          commission_pct: number
           cover_image_url: string | null
           created_at: string
           created_by: string | null
@@ -29,6 +30,7 @@ export type Database = {
         }
         Insert: {
           catalog_pdf_url?: string | null
+          commission_pct?: number
           cover_image_url?: string | null
           created_at?: string
           created_by?: string | null
@@ -41,6 +43,7 @@ export type Database = {
         }
         Update: {
           catalog_pdf_url?: string | null
+          commission_pct?: number
           cover_image_url?: string | null
           created_at?: string
           created_by?: string | null
@@ -276,7 +279,7 @@ export type Database = {
     Enums: {
       app_role: "admin" | "client"
       brand_status: "processing" | "unpublished" | "published"
-      order_status: "new" | "viewed" | "confirmed" | "cancelled"
+      order_status: "new" | "viewed" | "confirmed" | "cancelled" | "paid"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -406,7 +409,7 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "client"],
       brand_status: ["processing", "unpublished", "published"],
-      order_status: ["new", "viewed", "confirmed", "cancelled"],
+      order_status: ["new", "viewed", "confirmed", "cancelled", "paid"],
     },
   },
 } as const

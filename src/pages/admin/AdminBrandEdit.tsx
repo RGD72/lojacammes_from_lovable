@@ -22,16 +22,19 @@ interface Product {
 export default function AdminBrandEdit() {
   const { id } = useParams<{ id: string }>();
   const [brandName, setBrandName] = useState("");
+  const [commissionPct, setCommissionPct] = useState<number>(30);
+  const [savingCommission, setSavingCommission] = useState(false);
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     if (!id) return;
     const [{ data: b }, { data: p }] = await Promise.all([
-      supabase.from("brands").select("name").eq("id", id).maybeSingle(),
+      supabase.from("brands").select("name, commission_pct").eq("id", id).maybeSingle(),
       supabase.from("products").select("*").eq("brand_id", id).order("sort_order"),
     ]);
     setBrandName(b?.name ?? "");
+    setCommissionPct(Number((b as { commission_pct?: number } | null)?.commission_pct ?? 30));
     setItems((p ?? []) as Product[]);
     setLoading(false);
   };
@@ -51,7 +54,37 @@ export default function AdminBrandEdit() {
       <Link to="/admin" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4">
         <ArrowLeft className="h-4 w-4 mr-1" /> Vitrines
       </Link>
-      <h1 className="font-display text-4xl mb-8">{brandName}</h1>
+      <h1 className="font-display text-4xl mb-6">{brandName}</h1>
+      <div className="bg-card border border-border rounded p-4 mb-6 flex items-end gap-3 max-w-md">
+        <div className="flex-1 space-y-1">
+          <label className="text-[10px] tracking-editorial text-muted-foreground">Comissão (%)</label>
+          <Input
+            type="number"
+            min={0}
+            step="0.01"
+            value={commissionPct}
+            onChange={(e) => setCommissionPct(Number(e.target.value) || 0)}
+          />
+        </div>
+        <Button
+          size="sm"
+          disabled={savingCommission}
+          onClick={async () => {
+            if (!id) return;
+            setSavingCommission(true);
+            const { error } = await supabase
+              .from("brands")
+              .update({ commission_pct: commissionPct } as never)
+              .eq("id", id);
+            setSavingCommission(false);
+            if (error) toast.error(error.message);
+            else toast.success("Comissão salva");
+          }}
+        >
+          <Save className="h-4 w-4" />
+          {savingCommission ? "Salvando…" : "Salvar"}
+        </Button>
+      </div>
       <div className="space-y-3">
         {items.map((p) => (
           <ProductRow
