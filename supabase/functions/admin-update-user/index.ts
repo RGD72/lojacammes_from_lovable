@@ -42,11 +42,12 @@ Deno.serve(async (req) => {
     }
 
     if (action === "update") {
-      const { name, active, password } = body;
-      if (typeof name === "string" || typeof active === "boolean") {
-        const upd: Record<string, unknown> = {};
-        if (typeof name === "string") upd.name = name;
-        if (typeof active === "boolean") upd.active = active;
+      const { name, active, password, phone } = body;
+      const upd: Record<string, unknown> = {};
+      if (typeof name === "string") upd.name = name;
+      if (typeof active === "boolean") upd.active = active;
+      if (typeof phone === "string") upd.phone = phone;
+      if (Object.keys(upd).length > 0) {
         await admin.from("profiles").update(upd).eq("id", user_id);
       }
       if (typeof password === "string" && password.length >= 6) {

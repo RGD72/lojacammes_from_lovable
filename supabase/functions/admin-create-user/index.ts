@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
       return json({ error: "Forbidden" }, 403);
     }
 
-    const { email, password, name, role = "client", active = true } = await req.json();
+    const { email, password, name, phone = "", role = "client", active = true } = await req.json();
     if (!email || !password || !name) {
       return json({ error: "email, password and name required" }, 400);
     }
@@ -50,8 +50,8 @@ Deno.serve(async (req) => {
     if (cErr) throw cErr;
     const newId = created.user!.id;
 
-    // Update profile with name+active (trigger created the row)
-    await admin.from("profiles").update({ name, active }).eq("id", newId);
+    // Update profile with name+phone+active (trigger created the row)
+    await admin.from("profiles").update({ name, phone, active }).eq("id", newId);
 
     if (role === "admin") {
       await admin.from("user_roles").delete().eq("user_id", newId);
