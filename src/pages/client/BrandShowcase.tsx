@@ -13,6 +13,7 @@ interface Product {
   id: string; brand_id: string; page_number: number; look_id: string;
   reference: string; description: string; material: string;
   colors: string[]; sizes: string[]; price: number; image_url: string | null;
+  image_urls?: string[] | null;
 }
 
 export default function BrandShowcase() {
@@ -100,13 +101,7 @@ export default function BrandShowcase() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
                 {arr.map((p) => (
                   <button key={p.id} onClick={() => setActive(p)} className="text-left group">
-                    <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
-                      {p.image_url ? (
-                        <img src={p.image_url} alt={p.reference} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground tracking-editorial text-[10px]">sem imagem</div>
-                      )}
-                    </div>
+                    <ProductGallery product={p} />
                     <div className="mt-2">
                       <p className="text-[10px] tracking-editorial text-muted-foreground">{p.reference || "—"}</p>
                       <p className="font-display text-lg leading-tight">{p.description || "Produto"}</p>
@@ -122,6 +117,39 @@ export default function BrandShowcase() {
 
       <ProductDialog product={active} brandId={brand.id} onClose={() => setActive(null)} />
       <CartDrawer open={cartOpen} onOpenChange={setCartOpen} brand={brand} />
+    </div>
+  );
+}
+
+function ProductGallery({ product }: { product: Product }) {
+  const imgs = (product.image_urls && product.image_urls.length > 0)
+    ? product.image_urls
+    : (product.image_url ? [product.image_url] : []);
+  if (imgs.length === 0) {
+    return (
+      <div className="aspect-[3/4] bg-secondary overflow-hidden rounded flex items-center justify-center text-muted-foreground tracking-editorial text-[10px]">
+        sem imagem
+      </div>
+    );
+  }
+  if (imgs.length === 1) {
+    return (
+      <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
+        <img src={imgs[0]} alt={product.reference} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
+      </div>
+    );
+  }
+  return (
+    <div className="aspect-[3/4] bg-secondary overflow-x-auto overflow-y-hidden rounded snap-x snap-mandatory flex">
+      {imgs.map((u, i) => (
+        <img
+          key={i}
+          src={u}
+          alt={`${product.reference} ${i + 1}`}
+          loading="lazy"
+          className="h-full w-full flex-none object-cover snap-center"
+        />
+      ))}
     </div>
   );
 }

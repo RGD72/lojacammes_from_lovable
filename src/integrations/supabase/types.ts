@@ -159,6 +159,7 @@ export type Database = {
           description: string
           id: string
           image_url: string | null
+          image_urls: string[]
           look_id: string
           material: string
           page_number: number
@@ -175,6 +176,7 @@ export type Database = {
           description?: string
           id?: string
           image_url?: string | null
+          image_urls?: string[]
           look_id?: string
           material?: string
           page_number?: number
@@ -191,6 +193,7 @@ export type Database = {
           description?: string
           id?: string
           image_url?: string | null
+          image_urls?: string[]
           look_id?: string
           material?: string
           page_number?: number

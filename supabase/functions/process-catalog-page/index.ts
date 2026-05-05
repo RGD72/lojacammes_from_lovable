@@ -135,25 +135,57 @@ Deno.serve(async (req) => {
     }
 
     const lookId = `look-${page_number}`;
-    const rows = products
+    const cleaned = products
       .filter((p) => String(p?.reference ?? "").trim().length > 0)
       .map((p, i) => ({
-        brand_id,
-        page_number,
-        look_id: lookId,
         reference: String(p.reference).trim(),
         description: String(p.description ?? ""),
         material: String(p.material ?? ""),
         colors: Array.isArray(p.colors) ? p.colors.map(String) : [],
         sizes: Array.isArray(p.sizes) ? p.sizes.map(String) : [],
         price: Number(p.price ?? 0) || 0,
-        image_url: pageUrl,
         sort_order: page_number * 100 + i,
       }));
 
-    if (rows.length > 0) {
-      const { error: insErr } = await admin.from("products").insert(rows);
-      if (insErr) throw insErr;
+    let inserted = 0;
+    let updated = 0;
+    for (const p of cleaned) {
+      // Check if a product with the same reference already exists in this brand
+      const { data: existing } = await admin
+        .from("products")
+        .select("id, image_urls, image_url")
+        .eq("brand_id", brand_id)
+        .eq("reference", p.reference)
+        .maybeSingle();
+
+      if (existing) {
+        const current: string[] = Array.isArray(existing.image_urls) ? existing.image_urls : [];
+        if (!current.includes(pageUrl)) {
+          const next = [...current, pageUrl];
+          await admin
+            .from("products")
+            .update({ image_urls: next })
+            .eq("id", existing.id);
+          updated++;
+        }
+      } else {
+        const { error: insErr } = await admin.from("products").insert({
+          brand_id,
+          page_number,
+          look_id: lookId,
+          reference: p.reference,
+          description: p.description,
+          material: p.material,
+          colors: p.colors,
+          sizes: p.sizes,
+          price: p.price,
+          image_url: pageUrl,
+          image_urls: [pageUrl],
+          sort_order: p.sort_order,
+        });
+        if (insErr) throw insErr;
+        inserted++;
+      }
     }
 
     // Update progress
@@ -169,7 +201,7 @@ Deno.serve(async (req) => {
     }
     await admin.from("brands").update(updates).eq("id", brand_id);
 
-    return json({ ok: true, count: rows.length, page_url: pageUrl });
+    return json({ ok: true, inserted, updated, page_url: pageUrl });
   } catch (e) {
     console.error("process-catalog-page error:", e);
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);

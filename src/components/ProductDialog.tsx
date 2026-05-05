@@ -7,6 +7,7 @@ import { toast } from "sonner";
 interface Product {
   id: string; brand_id: string; reference: string; description: string;
   material: string; colors: string[]; sizes: string[]; price: number; image_url: string | null;
+  image_urls?: string[] | null;
 }
 
 export function ProductDialog({
@@ -50,11 +51,7 @@ export function ProductDialog({
           <DialogTitle className="font-display text-3xl">{product.description || "Produto"}</DialogTitle>
         </DialogHeader>
         <div className="grid md:grid-cols-2 gap-6">
-          <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
-            {product.image_url && (
-              <img src={product.image_url} alt={product.reference} className="w-full h-full object-cover" />
-            )}
-          </div>
+          <DialogGallery product={product} />
           <div className="space-y-4">
             <div>
               <p className="text-[10px] tracking-editorial text-muted-foreground">Referência</p>
@@ -121,5 +118,33 @@ export function ProductDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DialogGallery({ product }: { product: Product }) {
+  const imgs = (product.image_urls && product.image_urls.length > 0)
+    ? product.image_urls
+    : (product.image_url ? [product.image_url] : []);
+  if (imgs.length === 0) {
+    return <div className="aspect-[3/4] bg-secondary rounded" />;
+  }
+  if (imgs.length === 1) {
+    return (
+      <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
+        <img src={imgs[0]} alt={product.reference} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div className="aspect-[3/4] bg-secondary overflow-x-auto overflow-y-hidden rounded snap-x snap-mandatory flex">
+      {imgs.map((u, i) => (
+        <img
+          key={i}
+          src={u}
+          alt={`${product.reference} ${i + 1}`}
+          className="h-full w-full flex-none object-cover snap-center"
+        />
+      ))}
+    </div>
   );
 }
