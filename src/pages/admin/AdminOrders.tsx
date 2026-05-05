@@ -134,7 +134,7 @@ export default function AdminOrders() {
         money(Number(i.unit_price)),
         money(total),
         money(totalC),
-        statusLabel[o.status],
+        statusLabel[i.status],
       ].join(";"));
     }
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -208,7 +208,7 @@ export default function AdminOrders() {
                 const total = Number(i.unit_price) * Number(i.quantity);
                 const totalC = total * (1 + brandCommission(o.brand_id) / 100);
                 return (
-                  <tr key={i.id} className={`border-t border-border ${o.status === "cancelled" ? "text-red-600 [&_*]:text-red-600" : ""}`}>
+                  <tr key={i.id} className={`border-t border-border ${i.status === "cancelled" ? "text-red-600 [&_*]:text-red-600" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{new Date(o.created_at).toLocaleString("pt-BR")}</td>
                     <td className="px-4 py-3">{o.client_name}</td>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{phones[o.user_id] ?? "—"}</td>
@@ -222,7 +222,7 @@ export default function AdminOrders() {
                     <td className="px-4 py-3 text-right whitespace-nowrap">{money(total)}</td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">{money(totalC)}</td>
                     <td className="px-4 py-3">
-                      <Select value={o.status} onValueChange={(v) => updateStatus(o, v as Status)}>
+                      <Select value={i.status} onValueChange={(v) => updateItemStatus(i, v as Status)}>
                         <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {(Object.keys(statusLabel) as Status[]).map((s) => (
@@ -234,7 +234,7 @@ export default function AdminOrders() {
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => {
                         setViewing(o);
-                        if (o.status === "new") updateStatus(o, "viewed");
+                        if (i.status === "new") updateItemStatus(i, "viewed");
                       }}>
                         <Eye className="h-4 w-4" />
                       </Button>
