@@ -24,6 +24,7 @@ interface Brand { id: string; name: string; commission_pct: number; }
 interface OrderItem {
   id: string; order_id: string; reference: string; description: string;
   color: string; size: string; quantity: number; unit_price: number;
+  status: Status;
 }
 interface ProfilePhone { id: string; phone: string | null; }
 
@@ -82,7 +83,6 @@ export default function AdminOrders() {
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       if (brandFilter !== "all" && o.brand_id !== brandFilter) return false;
-      if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (dateFrom && new Date(o.created_at) < new Date(dateFrom)) return false;
       if (dateTo) {
         const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
@@ -96,18 +96,22 @@ export default function AdminOrders() {
     const list: { order: Order; item: OrderItem }[] = [];
     for (const o of filteredOrders) {
       const its = allItems.filter((i) => i.order_id === o.id);
-      for (const i of its) list.push({ order: o, item: i });
+      for (const i of its) {
+        if (statusFilter !== "all" && i.status !== statusFilter) continue;
+        list.push({ order: o, item: i });
+      }
     }
     return list;
-  }, [filteredOrders, allItems]);
+  }, [filteredOrders, allItems, statusFilter]);
 
   const brandName = (id: string) => brands.find((b) => b.id === id)?.name ?? "—";
   const brandCommission = (id: string) => Number(brands.find((b) => b.id === id)?.commission_pct ?? 0);
 
-  const updateStatus = async (o: Order, status: Status) => {
-    const { error } = await supabase.from("orders").update({ status }).eq("id", o.id);
-    if (error) toast.error(error.message);
-    else toast.success("Status atualizado");
+  const updateItemStatus = async (item: OrderItem, status: Status) => {
+    const { error } = await supabase.from("order_items").update({ status }).eq("id", item.id);
+    if (error) return toast.error(error.message);
+    setAllItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, status } : x)));
+    toast.success("Status atualizado");
   };
 
   const exportCsv = async () => {
@@ -130,7 +134,7 @@ export default function AdminOrders() {
         money(Number(i.unit_price)),
         money(total),
         money(totalC),
-        statusLabel[o.status],
+        statusLabel[i.status],
       ].join(";"));
     }
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -204,7 +208,7 @@ export default function AdminOrders() {
                 const total = Number(i.unit_price) * Number(i.quantity);
                 const totalC = total * (1 + brandCommission(o.brand_id) / 100);
                 return (
-                  <tr key={i.id} className={`border-t border-border ${o.status === "cancelled" ? "text-red-600 [&_*]:text-red-600" : ""}`}>
+                  <tr key={i.id} className={`border-t border-border ${i.status === "cancelled" ? "text-red-600 [&_*]:text-red-600" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{new Date(o.created_at).toLocaleString("pt-BR")}</td>
                     <td className="px-4 py-3">{o.client_name}</td>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{phones[o.user_id] ?? "—"}</td>
@@ -218,7 +222,7 @@ export default function AdminOrders() {
                     <td className="px-4 py-3 text-right whitespace-nowrap">{money(total)}</td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">{money(totalC)}</td>
                     <td className="px-4 py-3">
-                      <Select value={o.status} onValueChange={(v) => updateStatus(o, v as Status)}>
+                      <Select value={i.status} onValueChange={(v) => updateItemStatus(i, v as Status)}>
                         <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {(Object.keys(statusLabel) as Status[]).map((s) => (
@@ -230,7 +234,7 @@ export default function AdminOrders() {
                     <td className="px-4 py-3 text-right">
                       <Button size="sm" variant="ghost" onClick={() => {
                         setViewing(o);
-                        if (o.status === "new") updateStatus(o, "viewed");
+                        if (i.status === "new") updateItemStatus(i, "viewed");
                       }}>
                         <Eye className="h-4 w-4" />
                       </Button>
