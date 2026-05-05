@@ -8,8 +8,7 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `You analyze fashion catalog pages and extract every product visible.
-Return STRICT JSON via the provided tool. For each product include reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), and price as a number (0 if unknown).
-If a field is unknown, use empty string or empty array; price 0. Multiple products on the same page belong to the same look.`;
+Return STRICT JSON via the provided tool. ONLY include products whose reference (SKU/code) is clearly written/visible on the page. If no reference text is visible for an item, DO NOT include it. For each included product return reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), and price as a number (0 if unknown). If a non-reference field is unknown, use empty string or empty array; price 0. Multiple products on the same page belong to the same look.`;
 
 const TOOL = {
   type: "function",
