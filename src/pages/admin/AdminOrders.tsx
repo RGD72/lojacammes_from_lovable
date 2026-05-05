@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { Download, Eye } from "lucide-react";
 
-type Status = "new" | "viewed" | "confirmed" | "cancelled";
+type Status = "new" | "viewed" | "confirmed" | "paid" | "cancelled";
 
 interface Order {
   id: string;
@@ -20,14 +20,15 @@ interface Order {
   total: number;
   created_at: string;
 }
-interface Brand { id: string; name: string; }
+interface Brand { id: string; name: string; commission_pct: number; }
 interface OrderItem {
-  id: string; reference: string; description: string;
+  id: string; order_id: string; reference: string; description: string;
   color: string; size: string; quantity: number; unit_price: number;
 }
+interface ProfilePhone { id: string; phone: string | null; }
 
 const statusLabel: Record<Status, string> = {
-  new: "Novo", viewed: "Visualizado", confirmed: "Confirmado", cancelled: "Cancelado",
+  new: "Novo", viewed: "Visualizado", confirmed: "Confirmado", paid: "Pago", cancelled: "Cancelado",
 };
 const money = (n: number) =>
   Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -35,6 +36,8 @@ const money = (n: number) =>
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [allItems, setAllItems] = useState<OrderItem[]>([]);
+  const [phones, setPhones] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [brandFilter, setBrandFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -45,10 +48,26 @@ export default function AdminOrders() {
   const load = async () => {
     const [{ data: o }, { data: b }] = await Promise.all([
       supabase.from("orders").select("*").order("created_at", { ascending: false }),
-      supabase.from("brands").select("id, name").order("name"),
+      supabase.from("brands").select("id, name, commission_pct").order("name"),
     ]);
-    setOrders((o ?? []) as Order[]);
+    const ords = (o ?? []) as Order[];
+    setOrders(ords);
     setBrands((b ?? []) as Brand[]);
+    if (ords.length) {
+      const ids = ords.map((x) => x.id);
+      const userIds = Array.from(new Set(ords.map((x) => x.user_id)));
+      const [{ data: its }, { data: profs }] = await Promise.all([
+        supabase.from("order_items").select("*").in("order_id", ids),
+        supabase.from("profiles").select("id, phone").in("id", userIds),
+      ]);
+      setAllItems((its ?? []) as OrderItem[]);
+      const map: Record<string, string> = {};
+      for (const p of (profs ?? []) as ProfilePhone[]) map[p.id] = p.phone ?? "";
+      setPhones(map);
+    } else {
+      setAllItems([]);
+      setPhones({});
+    }
     setLoading(false);
   };
   useEffect(() => {
@@ -60,7 +79,7 @@ export default function AdminOrders() {
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  const filtered = useMemo(() => {
+  const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       if (brandFilter !== "all" && o.brand_id !== brandFilter) return false;
       if (statusFilter !== "all" && o.status !== statusFilter) return false;
@@ -73,7 +92,17 @@ export default function AdminOrders() {
     });
   }, [orders, brandFilter, statusFilter, dateFrom, dateTo]);
 
+  const rowList = useMemo(() => {
+    const list: { order: Order; item: OrderItem }[] = [];
+    for (const o of filteredOrders) {
+      const its = allItems.filter((i) => i.order_id === o.id);
+      for (const i of its) list.push({ order: o, item: i });
+    }
+    return list;
+  }, [filteredOrders, allItems]);
+
   const brandName = (id: string) => brands.find((b) => b.id === id)?.name ?? "—";
+  const brandCommission = (id: string) => Number(brands.find((b) => b.id === id)?.commission_pct ?? 0);
 
   const updateStatus = async (o: Order, status: Status) => {
     const { error } = await supabase.from("orders").update({ status }).eq("id", o.id);
@@ -82,35 +111,29 @@ export default function AdminOrders() {
   };
 
   const exportCsv = async () => {
-    if (filtered.length === 0) return toast.error("Nenhum pedido para exportar");
-    const ids = filtered.map((o) => o.id);
-    const { data: items } = await supabase
-      .from("order_items")
-      .select("*")
-      .in("order_id", ids);
-    const rows: string[] = [];
-    rows.push(["Pedido","Data","Cliente","Vitrine","Status","Ref","Descrição","Cor","Tam","Qtd","Unit","Total"].join(";"));
-    for (const o of filtered) {
-      const its = (items ?? []).filter((i) => i.order_id === o.id);
-      const list = its.length ? its : [null];
-      for (const i of list) {
-        rows.push([
-          o.id.slice(0, 8),
-          new Date(o.created_at).toLocaleString("pt-BR"),
-          csv(o.client_name),
-          csv(brandName(o.brand_id)),
-          statusLabel[o.status],
-          csv(i?.reference ?? ""),
-          csv(i?.description ?? ""),
-          csv(i?.color ?? ""),
-          csv(i?.size ?? ""),
-          i?.quantity ?? "",
-          i ? money(Number(i.unit_price)) : "",
-          i ? money(Number(i.unit_price) * Number(i.quantity)) : money(Number(o.total)),
-        ].join(";"));
-      }
+    if (rowList.length === 0) return toast.error("Nenhum pedido para exportar");
+    const lines: string[] = [];
+    lines.push(["Data","Cliente","Telefone","Vitrine","Ref","Descrição","Cor","Tam","Qtd","Valor Unit.","Total","Total Com Comissão","Status"].join(";"));
+    for (const { order: o, item: i } of rowList) {
+      const total = Number(i.unit_price) * Number(i.quantity);
+      const totalC = total * (1 + brandCommission(o.brand_id) / 100);
+      lines.push([
+        new Date(o.created_at).toLocaleString("pt-BR"),
+        csv(o.client_name),
+        csv(phones[o.user_id] ?? ""),
+        csv(brandName(o.brand_id)),
+        csv(i.reference),
+        csv(i.description),
+        csv(i.color),
+        csv(i.size),
+        i.quantity,
+        money(Number(i.unit_price)),
+        money(total),
+        money(totalC),
+        statusLabel[o.status],
+      ].join(";"));
     }
-    const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `pedidos-${new Date().toISOString().slice(0,10)}.csv`;
@@ -153,48 +176,68 @@ export default function AdminOrders() {
 
       {loading ? (
         <p className="text-muted-foreground">carregando…</p>
-      ) : filtered.length === 0 ? (
+      ) : rowList.length === 0 ? (
         <p className="text-muted-foreground">Nenhum pedido encontrado.</p>
       ) : (
-        <div className="bg-card border border-border rounded overflow-hidden">
+        <div className="bg-card border border-border rounded overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-secondary/60">
               <tr className="text-left">
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Data</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Cliente</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Telefone</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Vitrine</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Ref</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Descrição</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Cor</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Tam</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground text-right">Qtd</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground text-right">Valor Unit.</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground text-right">Total</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground text-right">Total c/ Comissão</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((o) => (
-                <tr key={o.id} className="border-t border-border">
-                  <td className="px-4 py-3 text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR")}</td>
-                  <td className="px-4 py-3">{o.client_name}</td>
-                  <td className="px-4 py-3">{brandName(o.brand_id)}</td>
-                  <td className="px-4 py-3 text-right">{money(Number(o.total))}</td>
-                  <td className="px-4 py-3">
-                    <Select value={o.status} onValueChange={(v) => updateStatus(o, v as Status)}>
-                      <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {(Object.keys(statusLabel) as Status[]).map((s) => (
-                          <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button size="sm" variant="ghost" onClick={() => {
-                      setViewing(o);
-                      if (o.status === "new") updateStatus(o, "viewed");
-                    }}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {rowList.map(({ order: o, item: i }) => {
+                const total = Number(i.unit_price) * Number(i.quantity);
+                const totalC = total * (1 + brandCommission(o.brand_id) / 100);
+                return (
+                  <tr key={i.id} className="border-t border-border">
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{new Date(o.created_at).toLocaleString("pt-BR")}</td>
+                    <td className="px-4 py-3">{o.client_name}</td>
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{phones[o.user_id] ?? "—"}</td>
+                    <td className="px-4 py-3">{brandName(o.brand_id)}</td>
+                    <td className="px-4 py-3">{i.reference}</td>
+                    <td className="px-4 py-3">{i.description}</td>
+                    <td className="px-4 py-3">{i.color}</td>
+                    <td className="px-4 py-3">{i.size}</td>
+                    <td className="px-4 py-3 text-right">{i.quantity}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">{money(Number(i.unit_price))}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">{money(total)}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">{money(totalC)}</td>
+                    <td className="px-4 py-3">
+                      <Select value={o.status} onValueChange={(v) => updateStatus(o, v as Status)}>
+                        <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {(Object.keys(statusLabel) as Status[]).map((s) => (
+                            <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        setViewing(o);
+                        if (o.status === "new") updateStatus(o, "viewed");
+                      }}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
