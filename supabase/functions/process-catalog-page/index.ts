@@ -142,9 +142,12 @@ Deno.serve(async (req) => {
         colors: Array.isArray(p.colors) ? p.colors.map(String) : [],
         sizes: Array.isArray(p.sizes) ? p.sizes.map(String) : [],
         price: Number(p.price ?? 0) || 0,
-        bbox: Array.isArray(p.bbox) && p.bbox.length === 4
-          ? p.bbox.map((n: any) => Number(n)).map((n: number) => Number.isFinite(n) ? n : 0)
-          : [0, 0, 1, 1],
+        bbox: (() => {
+          if (!Array.isArray(p.bbox) || p.bbox.length !== 4) return [0, 0, 1, 1];
+          const nums = p.bbox.map((n: any) => Number(n));
+          const ok = nums.every((n) => Number.isFinite(n) && n >= 0 && n <= 1) && nums[2] > 0 && nums[3] > 0;
+          return ok ? nums : [0, 0, 1, 1];
+        })(),
         sort_order: page_number * 100 + i,
       }));
 
