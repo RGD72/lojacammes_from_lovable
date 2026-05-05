@@ -83,7 +83,6 @@ export default function AdminOrders() {
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       if (brandFilter !== "all" && o.brand_id !== brandFilter) return false;
-      if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (dateFrom && new Date(o.created_at) < new Date(dateFrom)) return false;
       if (dateTo) {
         const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
