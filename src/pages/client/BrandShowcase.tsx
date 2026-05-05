@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Download, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Download, ShoppingBag, X } from "lucide-react";
 import { useCart, money } from "@/lib/cart";
 import { ProductDialog } from "@/components/ProductDialog";
 import { CartDrawer } from "@/components/CartDrawer";
@@ -18,6 +18,8 @@ interface Product {
 
 export default function BrandShowcase() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const isAdminPreview = location.pathname.startsWith("/admin/");
   const [brand, setBrand] = useState<Brand | null>(null);
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,9 +67,22 @@ export default function BrandShowcase() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10">
-      <Link to="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4">
-        <ArrowLeft className="h-4 w-4 mr-1" /> Vitrines
-      </Link>
+      {isAdminPreview ? (
+        <div className="flex items-center justify-between mb-4 p-3 rounded border border-dashed border-primary/40 bg-primary/5">
+          <p className="text-xs tracking-editorial text-muted-foreground">
+            Pré-visualização — você está vendo a vitrine como o cliente.
+          </p>
+          <Link to="/admin">
+            <Button variant="outline" size="sm">
+              <X className="h-4 w-4 mr-1" /> Sair da pré-visualização
+            </Button>
+          </Link>
+        </div>
+      ) : (
+        <Link to="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Vitrines
+        </Link>
+      )}
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
         <div>
           <p className="tracking-editorial text-muted-foreground mb-2">Coleção</p>
