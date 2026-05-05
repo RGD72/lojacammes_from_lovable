@@ -19,7 +19,9 @@ export function CartDrawer({
   const items = carts[brand.id] ?? [];
   const total = totalFor(brand.id);
   const [busy, setBusy] = useState(false);
-  const [confirmation, setConfirmation] = useState<{ id: string; createdAt: string } | null>(null);
+  const [confirmation, setConfirmation] = useState<
+    { id: string; createdAt: string; items: typeof items; total: number } | null
+  >(null);
 
   const submit = async () => {
     if (!user) return toast.error("Sessão expirada");
@@ -55,7 +57,7 @@ export function CartDrawer({
       // Notify admin (best-effort)
       supabase.functions.invoke("notify-new-order", { body: { order_id: order.id } }).catch(() => {});
 
-      setConfirmation({ id: order.id, createdAt: order.created_at });
+      setConfirmation({ id: order.id, createdAt: order.created_at, items: [...items], total });
       clearBrand(brand.id);
       toast.success("Pedido enviado");
     } catch (e) {
@@ -72,8 +74,8 @@ export function CartDrawer({
       brandName: brand.name,
       clientName: profileName || user?.email || "",
       createdAt: confirmation.createdAt,
-      items,
-      total,
+      items: confirmation.items,
+      total: confirmation.total,
     });
   };
 
