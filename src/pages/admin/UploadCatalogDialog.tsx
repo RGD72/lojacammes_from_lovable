@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,17 @@ export function UploadCatalogDialog({
   const cancelRef = useRef(false);
   const brandIdRef = useRef<string | null>(null);
   const pdfPathRef = useRef<string | null>(null);
+
+  // Warn user if they try to close the tab during processing
+  useEffect(() => {
+    if (!busy) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [busy]);
 
   const reset = () => {
     setName(""); setFile(null); setBusy(false); setProgress(0); setStage("");
@@ -156,6 +167,9 @@ export function UploadCatalogDialog({
       } else {
         console.error(e);
         toast.error(e instanceof Error ? e.message : "Falha ao processar catálogo");
+        // Clean up orphan brand so it doesn't stay stuck in "processing"
+        await cleanup();
+        onCreated();
       }
     } finally {
       setBusy(false);

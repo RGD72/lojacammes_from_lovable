@@ -1,0 +1,2 @@
+DELETE FROM public.products WHERE brand_id IN ('c05b26be-e998-4c54-bcae-73aafa337ee2','fa79ff21-4a44-42d4-a97a-b656de629799','52579062-d8ca-4c18-b594-fc54b60142f5');
+DELETE FROM public.brands WHERE id IN ('c05b26be-e998-4c54-bcae-73aafa337ee2','fa79ff21-4a44-42d4-a97a-b656de629799','52579062-d8ca-4c18-b594-fc54b60142f5');
