@@ -1,6 +1,7 @@
 // Receives one rendered PDF page (image data URL) and extracts products via Lovable AI Vision.
 // Stores the page image, persists products, and updates brand progress.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +9,7 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `You analyze fashion catalog pages and extract every product visible.
-Return STRICT JSON via the provided tool. ONLY include products whose reference (SKU/code) is clearly written/visible on the page. If no reference text is visible for an item, DO NOT include it. For each included product return reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), and price as a number (0 if unknown). If a non-reference field is unknown, use empty string or empty array; price 0. Multiple products on the same page belong to the same look.`;
+Return STRICT JSON via the provided tool. ONLY include products whose reference (SKU/code) is clearly written/visible on the page. If no reference text is visible for an item, DO NOT include it. For each included product return reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), price as a number (0 if unknown), and bbox: the normalized bounding box [x, y, w, h] (each value between 0 and 1, relative to page width/height) tightly enclosing the SINGLE product photo that is physically CLOSEST to that reference label on the page. Each product must point to ONE distinct photo region — never reuse the same bbox for two references. If a non-reference field is unknown, use empty string or empty array; price 0. If you cannot determine the bbox, return [0,0,1,1]. Multiple products on the same page belong to the same look.`;
 
 const TOOL = {
   type: "function",
@@ -29,8 +30,15 @@ const TOOL = {
               colors: { type: "array", items: { type: "string" } },
               sizes: { type: "array", items: { type: "string" } },
               price: { type: "number" },
+              bbox: {
+                type: "array",
+                items: { type: "number" },
+                minItems: 4,
+                maxItems: 4,
+                description: "Normalized [x, y, w, h] of the product photo closest to this reference (0..1).",
+              },
             },
-            required: ["reference", "description", "material", "colors", "sizes", "price"],
+            required: ["reference", "description", "material", "colors", "sizes", "price", "bbox"],
             additionalProperties: false,
           },
         },
@@ -144,12 +152,67 @@ Deno.serve(async (req) => {
         colors: Array.isArray(p.colors) ? p.colors.map(String) : [],
         sizes: Array.isArray(p.sizes) ? p.sizes.map(String) : [],
         price: Number(p.price ?? 0) || 0,
+        bbox: Array.isArray(p.bbox) && p.bbox.length === 4
+          ? p.bbox.map((n: any) => Number(n)).map((n: number) => Number.isFinite(n) ? n : 0)
+          : [0, 0, 1, 1],
         sort_order: page_number * 100 + i,
       }));
+
+    // Decode the page once so we can crop one photo per reference.
+    let pageImage: Image | null = null;
+    if (cleaned.length > 1) {
+      try {
+        pageImage = await Image.decode(pageBytes);
+      } catch (e) {
+        console.error("page decode failed", e);
+      }
+    }
+
+    const cropAndUpload = async (
+      ref: string,
+      bbox: number[],
+    ): Promise<string> => {
+      if (!pageImage) return pageUrl;
+      const W = pageImage.width;
+      const H = pageImage.height;
+      let [x, y, w, h] = bbox;
+      // Sanity clamp
+      x = Math.max(0, Math.min(1, x));
+      y = Math.max(0, Math.min(1, y));
+      w = Math.max(0.05, Math.min(1 - x, w));
+      h = Math.max(0.05, Math.min(1 - y, h));
+      const px = Math.floor(x * W);
+      const py = Math.floor(y * H);
+      const pw = Math.max(1, Math.floor(w * W));
+      const ph = Math.max(1, Math.floor(h * H));
+      try {
+        const cropped = pageImage.clone().crop(px, py, pw, ph);
+        const jpg = await cropped.encodeJPEG(85);
+        const safeRef = ref.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 40);
+        const cropPath = `${brand_id}/page-${String(page_number).padStart(4, "0")}-${safeRef}.jpg`;
+        const { error: cErr } = await admin.storage
+          .from("catalog-pages")
+          .upload(cropPath, jpg, { contentType: "image/jpeg", upsert: true });
+        if (cErr) {
+          console.error("crop upload failed", cErr);
+          return pageUrl;
+        }
+        const { data: cPub } = admin.storage.from("catalog-pages").getPublicUrl(cropPath);
+        return cPub.publicUrl;
+      } catch (e) {
+        console.error("crop failed", e);
+        return pageUrl;
+      }
+    };
 
     let inserted = 0;
     let updated = 0;
     for (const p of cleaned) {
+      // If only one product on this page, the full page image is the product photo.
+      const productImageUrl = cleaned.length === 1
+        ? pageUrl
+        : await cropAndUpload(p.reference, p.bbox);
+
       // Check if a product with the same reference already exists in this brand
       const { data: existing } = await admin
         .from("products")
@@ -160,8 +223,8 @@ Deno.serve(async (req) => {
 
       if (existing) {
         const current: string[] = Array.isArray(existing.image_urls) ? existing.image_urls : [];
-        if (!current.includes(pageUrl)) {
-          const next = [...current, pageUrl];
+        if (!current.includes(productImageUrl)) {
+          const next = [...current, productImageUrl];
           await admin
             .from("products")
             .update({ image_urls: next })
@@ -179,8 +242,8 @@ Deno.serve(async (req) => {
           colors: p.colors,
           sizes: p.sizes,
           price: p.price,
-          image_url: pageUrl,
-          image_urls: [pageUrl],
+          image_url: productImageUrl,
+          image_urls: [productImageUrl],
           sort_order: p.sort_order,
         });
         if (insErr) throw insErr;
