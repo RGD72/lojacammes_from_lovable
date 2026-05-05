@@ -7,6 +7,7 @@ import { toast } from "sonner";
 interface Product {
   id: string; brand_id: string; reference: string; description: string;
   material: string; colors: string[]; sizes: string[]; price: number; image_url: string | null;
+  image_urls?: string[] | null;
 }
 
 export function ProductDialog({
@@ -50,11 +51,7 @@ export function ProductDialog({
           <DialogTitle className="font-display text-3xl">{product.description || "Produto"}</DialogTitle>
         </DialogHeader>
         <div className="grid md:grid-cols-2 gap-6">
-          <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
-            {product.image_url && (
-              <img src={product.image_url} alt={product.reference} className="w-full h-full object-cover" />
-            )}
-          </div>
+          <DialogGallery product={product} />
           <div className="space-y-4">
             <div>
               <p className="text-[10px] tracking-editorial text-muted-foreground">Referência</p>
