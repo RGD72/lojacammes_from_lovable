@@ -151,7 +151,13 @@ function DialogGallery({ product }: { product: Product }) {
 }
 
 function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: string }) {
-  const [x, y, w, h] = bbox && bbox.length === 4 ? bbox : [0, 0, 1, 1];
+  const valid =
+    Array.isArray(bbox) &&
+    bbox.length === 4 &&
+    bbox.every((n) => Number.isFinite(n) && n >= 0 && n <= 1) &&
+    bbox[2] > 0 &&
+    bbox[3] > 0;
+  const [x, y, w, h] = valid ? bbox : [0, 0, 1, 1];
   const safeW = Math.max(0.05, Math.min(1, w));
   const safeH = Math.max(0.05, Math.min(1, h));
   const scale = Math.max(1 / safeW, 1 / safeH);
