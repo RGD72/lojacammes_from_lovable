@@ -1,7 +1,6 @@
 // Receives one rendered PDF page (image data URL) and extracts products via Lovable AI Vision.
 // Stores the page image, persists products, and updates brand progress.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
