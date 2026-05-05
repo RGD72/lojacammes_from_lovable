@@ -113,6 +113,39 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
+function ListField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string[];
+  onChange: (arr: string[]) => void;
+}) {
+  const [text, setText] = useState(value.join(", "));
+  const externalKey = value.join("|");
+  useEffect(() => {
+    const parsed = text.split(",").map((x) => x.trim()).filter(Boolean);
+    if (parsed.join("|") !== externalKey) {
+      setText(value.join(", "));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalKey]);
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] tracking-editorial text-muted-foreground">{label}</label>
+      <Input
+        value={text}
+        onChange={(e) => {
+          const v = e.target.value;
+          setText(v);
+          onChange(v.split(",").map((x) => x.trim()).filter(Boolean));
+        }}
+      />
+    </div>
+  );
+}
+
 function ProductRow({
   product,
   onSaved,
