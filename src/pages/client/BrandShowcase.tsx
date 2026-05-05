@@ -14,6 +14,7 @@ interface Product {
   reference: string; description: string; material: string;
   colors: string[]; sizes: string[]; price: number; image_url: string | null;
   image_urls?: string[] | null;
+  image_bboxes?: number[][] | null;
 }
 
 export default function BrandShowcase() {
@@ -140,6 +141,9 @@ function ProductGallery({ product }: { product: Product }) {
   const imgs = (product.image_urls && product.image_urls.length > 0)
     ? product.image_urls
     : (product.image_url ? [product.image_url] : []);
+  const boxes = (product.image_bboxes && product.image_bboxes.length === imgs.length)
+    ? product.image_bboxes
+    : imgs.map(() => [0, 0, 1, 1] as number[]);
   if (imgs.length === 0) {
     return (
       <div className="aspect-[3/4] bg-secondary overflow-hidden rounded flex items-center justify-center text-muted-foreground tracking-editorial text-[10px]">
@@ -150,21 +154,43 @@ function ProductGallery({ product }: { product: Product }) {
   if (imgs.length === 1) {
     return (
       <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
-        <img src={imgs[0]} alt={product.reference} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
+        <BboxImage src={imgs[0]} bbox={boxes[0]} alt={product.reference} />
       </div>
     );
   }
   return (
     <div className="aspect-[3/4] bg-secondary overflow-x-auto overflow-y-hidden rounded snap-x snap-mandatory flex">
       {imgs.map((u, i) => (
-        <img
-          key={i}
-          src={u}
-          alt={`${product.reference} ${i + 1}`}
-          loading="lazy"
-          className="h-full w-full flex-none object-cover snap-center"
-        />
+        <div key={i} className="h-full w-full flex-none snap-center">
+          <BboxImage src={u} bbox={boxes[i]} alt={`${product.reference} ${i + 1}`} />
+        </div>
       ))}
+    </div>
+  );
+}
+
+function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: string }) {
+  const [x, y, w, h] = bbox && bbox.length === 4 ? bbox : [0, 0, 1, 1];
+  const safeW = Math.max(0.05, Math.min(1, w));
+  const safeH = Math.max(0.05, Math.min(1, h));
+  const scaleX = 1 / safeW;
+  const scaleY = 1 / safeH;
+  // Use the larger scale so the bbox fully covers the container (object-cover behavior).
+  const scale = Math.max(scaleX, scaleY);
+  // Translate so the bbox center aligns with the container center.
+  const cx = x + safeW / 2;
+  const cy = y + safeH / 2;
+  const tx = (0.5 - cx) * 100 * scale;
+  const ty = (0.5 - cy) * 100 * scale;
+  return (
+    <div className="w-full h-full overflow-hidden">
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        className="w-full h-full object-cover"
+        style={{ transform: `translate(${tx}%, ${ty}%) scale(${scale})`, transformOrigin: "center center" }}
+      />
     </div>
   );
 }
