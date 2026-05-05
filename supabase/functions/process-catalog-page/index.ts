@@ -201,7 +201,7 @@ Deno.serve(async (req) => {
     }
     await admin.from("brands").update(updates).eq("id", brand_id);
 
-    return json({ ok: true, count: rows.length, page_url: pageUrl });
+    return json({ ok: true, inserted, updated, page_url: pageUrl });
   } catch (e) {
     console.error("process-catalog-page error:", e);
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
