@@ -166,15 +166,15 @@ function ProductRow({
           value={String(draft.price)}
           onChange={(v) => setDraft({ ...draft, price: Number(v) || 0 })}
         />
-        <Field
+        <ListField
           label="Cores (vírgula)"
-          value={draft.colors.join(", ")}
-          onChange={(v) => setDraft({ ...draft, colors: v.split(",").map((x) => x.trim()).filter(Boolean) })}
+          value={draft.colors}
+          onChange={(arr) => setDraft({ ...draft, colors: arr })}
         />
-        <Field
+        <ListField
           label="Tamanhos (vírgula)"
-          value={draft.sizes.join(", ")}
-          onChange={(v) => setDraft({ ...draft, sizes: v.split(",").map((x) => x.trim()).filter(Boolean) })}
+          value={draft.sizes}
+          onChange={(arr) => setDraft({ ...draft, sizes: arr })}
         />
         <div className="flex items-end justify-end gap-2 col-span-2 lg:col-span-4">
           <Button variant="ghost" size="sm" onClick={onRemove}>
