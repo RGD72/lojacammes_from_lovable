@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Eye, ArrowRight, Trash2 } from "lucide-react";
+import { Plus, Eye, ArrowRight, Trash2, Monitor } from "lucide-react";
 import { toast } from "sonner";
 import { UploadCatalogDialog } from "./UploadCatalogDialog";
 import {
@@ -135,6 +135,11 @@ export default function AdminBrands() {
                     <Link to={`/admin/brands/${b.id}`}>
                       <Button variant="outline" size="sm">
                         <Eye className="h-3.5 w-3.5 mr-1.5" /> Editar
+                      </Button>
+                    </Link>
+                    <Link to={`/admin/brands/${b.id}/preview`}>
+                      <Button variant="ghost" size="sm" aria-label="Ver como cliente">
+                        <Monitor className="h-3.5 w-3.5 mr-1.5" /> Ver
                       </Button>
                     </Link>
                     <AlertDialog>
