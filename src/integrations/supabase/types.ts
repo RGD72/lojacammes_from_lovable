@@ -161,6 +161,7 @@ export type Database = {
           created_at: string
           description: string
           id: string
+          image_bboxes: Json
           image_url: string | null
           image_urls: string[]
           look_id: string
@@ -178,6 +179,7 @@ export type Database = {
           created_at?: string
           description?: string
           id?: string
+          image_bboxes?: Json
           image_url?: string | null
           image_urls?: string[]
           look_id?: string
@@ -195,6 +197,7 @@ export type Database = {
           created_at?: string
           description?: string
           id?: string
+          image_bboxes?: Json
           image_url?: string | null
           image_urls?: string[]
           look_id?: string
