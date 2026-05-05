@@ -157,76 +157,33 @@ Deno.serve(async (req) => {
         sort_order: page_number * 100 + i,
       }));
 
-    // Decode the page once so we can crop one photo per reference.
-    let pageImage: Image | null = null;
-    if (cleaned.length > 1) {
-      try {
-        pageImage = await Image.decode(pageBytes);
-      } catch (e) {
-        console.error("page decode failed", e);
-      }
-    }
-
-    const cropAndUpload = async (
-      ref: string,
-      bbox: number[],
-    ): Promise<string> => {
-      if (!pageImage) return pageUrl;
-      const W = pageImage.width;
-      const H = pageImage.height;
-      let [x, y, w, h] = bbox;
-      // Sanity clamp
-      x = Math.max(0, Math.min(1, x));
-      y = Math.max(0, Math.min(1, y));
-      w = Math.max(0.05, Math.min(1 - x, w));
-      h = Math.max(0.05, Math.min(1 - y, h));
-      const px = Math.floor(x * W);
-      const py = Math.floor(y * H);
-      const pw = Math.max(1, Math.floor(w * W));
-      const ph = Math.max(1, Math.floor(h * H));
-      try {
-        const cropped = pageImage.clone().crop(px, py, pw, ph);
-        const jpg = await cropped.encodeJPEG(85);
-        const safeRef = ref.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 40);
-        const cropPath = `${brand_id}/page-${String(page_number).padStart(4, "0")}-${safeRef}.jpg`;
-        const { error: cErr } = await admin.storage
-          .from("catalog-pages")
-          .upload(cropPath, jpg, { contentType: "image/jpeg", upsert: true });
-        if (cErr) {
-          console.error("crop upload failed", cErr);
-          return pageUrl;
-        }
-        const { data: cPub } = admin.storage.from("catalog-pages").getPublicUrl(cropPath);
-        return cPub.publicUrl;
-      } catch (e) {
-        console.error("crop failed", e);
-        return pageUrl;
-      }
-    };
-
     let inserted = 0;
     let updated = 0;
     for (const p of cleaned) {
-      // If only one product on this page, the full page image is the product photo.
-      const productImageUrl = cleaned.length === 1
-        ? pageUrl
-        : await cropAndUpload(p.reference, p.bbox);
+      // We don't crop the image on the server (CPU-heavy). The full page URL is
+      // stored, plus a normalized bbox per image so the client can show only the
+      // region nearest to each reference.
+      const productImageUrl = pageUrl;
+      const productBbox = cleaned.length === 1 ? [0, 0, 1, 1] : p.bbox;
 
-      // Check if a product with the same reference already exists in this brand
       const { data: existing } = await admin
         .from("products")
-        .select("id, image_urls, image_url")
+        .select("id, image_urls, image_url, image_bboxes")
         .eq("brand_id", brand_id)
         .eq("reference", p.reference)
         .maybeSingle();
 
       if (existing) {
         const current: string[] = Array.isArray(existing.image_urls) ? existing.image_urls : [];
+        const currentBoxes: number[][] = Array.isArray(existing.image_bboxes)
+          ? (existing.image_bboxes as number[][])
+          : [];
         if (!current.includes(productImageUrl)) {
           const next = [...current, productImageUrl];
+          const nextBoxes = [...currentBoxes, productBbox];
           await admin
             .from("products")
-            .update({ image_urls: next })
+            .update({ image_urls: next, image_bboxes: nextBoxes })
             .eq("id", existing.id);
           updated++;
         }
@@ -243,6 +200,7 @@ Deno.serve(async (req) => {
           price: p.price,
           image_url: productImageUrl,
           image_urls: [productImageUrl],
+          image_bboxes: [productBbox],
           sort_order: p.sort_order,
         });
         if (insErr) throw insErr;
