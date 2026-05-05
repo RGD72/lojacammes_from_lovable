@@ -67,6 +67,7 @@ export type Database = {
           quantity: number
           reference: string
           size: string
+          status: Database["public"]["Enums"]["order_status"]
           unit_price: number
         }
         Insert: {
@@ -79,6 +80,7 @@ export type Database = {
           quantity?: number
           reference?: string
           size?: string
+          status?: Database["public"]["Enums"]["order_status"]
           unit_price?: number
         }
         Update: {
@@ -91,6 +93,7 @@ export type Database = {
           quantity?: number
           reference?: string
           size?: string
+          status?: Database["public"]["Enums"]["order_status"]
           unit_price?: number
         }
         Relationships: [
