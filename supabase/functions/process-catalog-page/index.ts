@@ -8,7 +8,14 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `You analyze fashion catalog pages and extract every product visible.
-Return STRICT JSON via the provided tool. ONLY include products whose reference (SKU/code) is clearly written/visible on the page. If no reference text is visible for an item, DO NOT include it. For each included product return reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), price as a number (0 if unknown), and bbox: the normalized bounding box [x, y, w, h] (each value between 0 and 1, relative to page width/height) tightly enclosing the SINGLE product photo that is physically CLOSEST to that reference label on the page. Each product must point to ONE distinct photo region — never reuse the same bbox for two references. If a non-reference field is unknown, use empty string or empty array; price 0. If you cannot determine the bbox, return [0,0,1,1]. Multiple products on the same page belong to the same look.`;
+Return STRICT JSON via the provided tool. ONLY include products whose reference (SKU/code) is clearly written/visible on the page. If no reference text is visible for an item, DO NOT include it. For each included product return reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), price as a number (0 if unknown), and bbox: the normalized bounding box [x, y, w, h] (each value between 0 and 1, relative to page width/height) framing the SINGLE product photo that is physically CLOSEST to that reference label on the page.
+
+CRITICAL bbox rules:
+- The bbox MUST fully contain the garment being sold (the entire piece must be visible — never cut sleeves, hems, collars or details). When the piece is worn by a model, frame the model's body so the garment is centered and complete; include enough surrounding context (head-to-knee at minimum when the photo allows). Prefer a slightly LOOSE crop over a tight one — add ~5% padding around the garment on every side.
+- Each product must point to ONE distinct photo region — never reuse the same bbox for two references.
+- If a non-reference field is unknown, use empty string or empty array; price 0.
+- If you cannot determine the bbox, return [0,0,1,1].
+- Multiple products on the same page belong to the same look.`;
 
 const TOOL = {
   type: "function",
