@@ -131,6 +131,7 @@ export function UploadCatalogDialog({
       await supabase.from("brands").update({ total_pages: totalPages }).eq("id", brand.id);
 
       // Process pages sequentially to respect rate limits
+      const pageResults: { page: number; products: number; error?: string }[] = [];
       for (let p = 1; p <= totalPages; p++) {
         if (cancelRef.current) throw new Error("__cancelled__");
         setStage(`Analisando página ${p}/${totalPages}…`);
@@ -142,28 +143,75 @@ export function UploadCatalogDialog({
           .upload(pagePath, blob, { contentType: "image/jpeg", upsert: true });
         if (pUpErr) {
           toast.error(`Página ${p}: falha ao enviar imagem`);
+          pageResults.push({ page: p, products: 0, error: "upload" });
           continue;
         }
         const { data: pPub } = supabase.storage.from("catalog-pages").getPublicUrl(pagePath);
-        const { data, error } = await supabase.functions.invoke("process-catalog-page", {
-          body: {
-            brand_id: brand.id,
-            page_number: p,
-            page_url: pPub.publicUrl,
-            page_path: pagePath,
-            total_pages: totalPages,
-            is_first: p === 1,
-          },
-        });
-        if (error || (data as { error?: string })?.error) {
-          const msg = (data as { error?: string })?.error ?? error?.message ?? "Erro IA";
-          toast.error(`Página ${p}: ${msg}`);
-          // continue with next page
+        let lastErr: string | undefined;
+        let inserted = 0;
+        let updated = 0;
+        // Retry up to 2 times on failure or zero products to mitigate transient AI hiccups
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const { data, error } = await supabase.functions.invoke("process-catalog-page", {
+            body: {
+              brand_id: brand.id,
+              page_number: p,
+              page_url: pPub.publicUrl,
+              page_path: pagePath,
+              total_pages: totalPages,
+              is_first: p === 1,
+            },
+          });
+          const payload = data as { error?: string; inserted?: number; updated?: number } | null;
+          if (error || payload?.error) {
+            lastErr = payload?.error ?? error?.message ?? "Erro IA";
+            continue;
+          }
+          inserted = payload?.inserted ?? 0;
+          updated = payload?.updated ?? 0;
+          lastErr = undefined;
+          if (inserted + updated > 0) break;
         }
+        if (lastErr) toast.error(`Página ${p}: ${lastErr}`);
+        pageResults.push({ page: p, products: inserted + updated, error: lastErr });
       }
       setProgress(100);
-      setStage("Concluído");
-      toast.success("Catálogo processado. Revise e publique.");
+      // Final verification: check DB for missing pages and products without image
+      setStage("Conferindo importação…");
+      const { data: dbProducts } = await supabase
+        .from("products")
+        .select("page_number, reference, image_url, image_urls")
+        .eq("brand_id", brand.id);
+      const pagesWithProducts = new Set((dbProducts ?? []).map((r) => r.page_number));
+      const missingPages: number[] = [];
+      for (let p = 1; p <= totalPages; p++) {
+        if (!pagesWithProducts.has(p)) missingPages.push(p);
+      }
+      const missingImages = (dbProducts ?? []).filter(
+        (r) => !r.image_url && (!Array.isArray(r.image_urls) || r.image_urls.length === 0),
+      );
+      if (missingPages.length === 0 && missingImages.length === 0) {
+        setStage("Concluído");
+        toast.success(`Catálogo processado: ${dbProducts?.length ?? 0} produtos em ${totalPages} páginas.`);
+      } else {
+        setStage("Concluído com avisos");
+        if (missingPages.length > 0) {
+          toast.warning(
+            `Páginas sem produtos detectados: ${missingPages.join(", ")}. Reimporte ou edite manualmente.`,
+            { duration: 10000 },
+          );
+        }
+        if (missingImages.length > 0) {
+          toast.warning(
+            `${missingImages.length} produto(s) sem imagem. Verifique referências: ${missingImages
+              .map((r) => r.reference)
+              .filter(Boolean)
+              .slice(0, 10)
+              .join(", ")}`,
+            { duration: 10000 },
+          );
+        }
+      }
       onCreated();
       onOpenChange(false);
       reset();
