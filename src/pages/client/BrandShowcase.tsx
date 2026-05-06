@@ -181,8 +181,10 @@ function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: strin
   const safeH = Math.max(0.05, Math.min(1, h));
   const scaleX = 1 / safeW;
   const scaleY = 1 / safeH;
-  // Use the larger scale so the bbox fully covers the container (object-cover behavior).
-  const scale = Math.max(scaleX, scaleY);
+  // Use the smaller scale so the entire bbox (and the garment inside) is fully
+  // visible inside the container (object-contain behavior). This avoids
+  // cropping pieces of clothing when the AI bbox is tighter than the card.
+  const scale = Math.min(scaleX, scaleY);
   // Translate so the bbox center aligns with the container center.
   const cx = x + safeW / 2;
   const cy = y + safeH / 2;
