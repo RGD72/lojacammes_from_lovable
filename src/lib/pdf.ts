@@ -19,9 +19,9 @@ export async function renderPdfPages(
   const totalPages = doc.numPages;
 
   // Reduce scale for very large PDFs to keep memory under control
-  // < 50 MB → 1.5, 50-150 MB → 1.2, > 150 MB → 1.0
+  // < 50 MB → 1.5, 50-150 MB → 1.2, 150-300 MB → 1.0, > 300 MB → 0.8
   const mb = file.size / (1024 * 1024);
-  const scale = mb > 150 ? 1.0 : mb > 50 ? 1.2 : 1.5;
+  const scale = mb > 300 ? 0.8 : mb > 150 ? 1.0 : mb > 50 ? 1.2 : 1.5;
 
   const renderPage = async (n: number, asBase64: boolean) => {
     const page = await doc.getPage(n);
