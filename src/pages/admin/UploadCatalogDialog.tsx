@@ -270,13 +270,22 @@ export function UploadCatalogDialog({
     <Dialog open={open} onOpenChange={(v) => { if (!busy) { onOpenChange(v); if (!v) reset(); } }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl">Nova vitrine</DialogTitle>
+          <DialogTitle className="font-display text-2xl">
+            {isResume ? "Continuar importação" : "Nova vitrine"}
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="brand-name">Nome da marca</Label>
-            <Input id="brand-name" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} required />
-          </div>
+          {!isResume && (
+            <div className="space-y-1.5">
+              <Label htmlFor="brand-name">Nome da marca</Label>
+              <Input id="brand-name" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} required />
+            </div>
+          )}
+          {isResume && (
+            <p className="text-xs text-muted-foreground">
+              Selecione novamente o mesmo PDF de <strong>{resumeBrand?.name}</strong>. Páginas já processadas serão puladas automaticamente.
+            </p>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="pdf">Catálogo (PDF, até 400MB)</Label>
             <Input
