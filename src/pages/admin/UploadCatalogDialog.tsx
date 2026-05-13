@@ -25,10 +25,12 @@ export function UploadCatalogDialog({
   open,
   onOpenChange,
   onCreated,
+  resumeBrand,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
+  resumeBrand?: { id: string; name: string } | null;
 }) {
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -38,6 +40,11 @@ export function UploadCatalogDialog({
   const cancelRef = useRef(false);
   const brandIdRef = useRef<string | null>(null);
   const pdfPathRef = useRef<string | null>(null);
+  const isResume = !!resumeBrand;
+
+  useEffect(() => {
+    if (resumeBrand) setName(resumeBrand.name);
+  }, [resumeBrand]);
 
   // Warn user if they try to close the tab during processing
   useEffect(() => {
@@ -58,6 +65,8 @@ export function UploadCatalogDialog({
   };
 
   const cleanup = async () => {
+    // In resume mode never delete the brand or its existing pages/PDF.
+    if (isResume) return;
     try {
       if (pdfPathRef.current) {
         await supabase.storage.from("catalogs").remove([pdfPathRef.current]);
@@ -99,41 +108,64 @@ export function UploadCatalogDialog({
 
     setBusy(true);
     try {
-      setStage("Criando vitrine…");
-      const { data: brand, error: bErr } = await supabase
-        .from("brands")
-        .insert({ name: name.trim(), status: "processing" })
-        .select()
-        .single();
-      if (bErr || !brand) throw bErr ?? new Error("erro ao criar marca");
-      brandIdRef.current = brand.id;
+      let brand: { id: string };
+      if (isResume && resumeBrand) {
+        brand = { id: resumeBrand.id };
+        await supabase.from("brands").update({ status: "processing" }).eq("id", brand.id);
+      } else {
+        setStage("Criando vitrine…");
+        const { data: created, error: bErr } = await supabase
+          .from("brands")
+          .insert({ name: name.trim(), status: "processing" })
+          .select()
+          .single();
+        if (bErr || !created) throw bErr ?? new Error("erro ao criar marca");
+        brand = created;
+        brandIdRef.current = brand.id;
+      }
       if (cancelRef.current) throw new Error("__cancelled__");
 
-      setStage("Enviando PDF…");
-      const safeName = file.name
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-zA-Z0-9._-]+/g, "_")
-        .replace(/_+/g, "_");
-      const pdfPath = `${brand.id}/${safeName}`;
-      const { error: upErr } = await supabase.storage
-        .from("catalogs")
-        .upload(pdfPath, file, { contentType: "application/pdf", upsert: true });
-      if (upErr) throw upErr;
-      pdfPathRef.current = pdfPath;
-      if (cancelRef.current) throw new Error("__cancelled__");
-      const { data: pub } = supabase.storage.from("catalogs").getPublicUrl(pdfPath);
-      await supabase.from("brands").update({ catalog_pdf_url: pub.publicUrl }).eq("id", brand.id);
+      if (!isResume) {
+        setStage("Enviando PDF…");
+        const safeName = file.name
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-zA-Z0-9._-]+/g, "_")
+          .replace(/_+/g, "_");
+        const pdfPath = `${brand.id}/${safeName}`;
+        const { error: upErr } = await supabase.storage
+          .from("catalogs")
+          .upload(pdfPath, file, { contentType: "application/pdf", upsert: true });
+        if (upErr) throw upErr;
+        pdfPathRef.current = pdfPath;
+        if (cancelRef.current) throw new Error("__cancelled__");
+        const { data: pub } = supabase.storage.from("catalogs").getPublicUrl(pdfPath);
+        await supabase.from("brands").update({ catalog_pdf_url: pub.publicUrl }).eq("id", brand.id);
+      }
 
       setStage("Renderizando páginas…");
       const { totalPages, pageImageBlob } = await renderPdfPages(file);
       if (cancelRef.current) throw new Error("__cancelled__");
       await supabase.from("brands").update({ total_pages: totalPages }).eq("id", brand.id);
 
+      // In resume mode, skip pages that already have products in DB.
+      let alreadyDone = new Set<number>();
+      if (isResume) {
+        const { data: existing } = await supabase
+          .from("products")
+          .select("page_number")
+          .eq("brand_id", brand.id);
+        alreadyDone = new Set((existing ?? []).map((r) => r.page_number));
+      }
+
       // Process pages sequentially to respect rate limits
       const pageResults: { page: number; products: number; error?: string }[] = [];
       for (let p = 1; p <= totalPages; p++) {
         if (cancelRef.current) throw new Error("__cancelled__");
+        if (alreadyDone.has(p)) {
+          setProgress(Math.round((p / totalPages) * 100));
+          continue;
+        }
         setStage(`Analisando página ${p}/${totalPages}…`);
         setProgress(Math.round(((p - 1) / totalPages) * 100));
         const blob = await pageImageBlob(p);
