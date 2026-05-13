@@ -101,7 +101,7 @@ export function UploadCatalogDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return toast.error("Informe o nome da marca");
+    if (!isResume && !name.trim()) return toast.error("Informe o nome da marca");
     if (!file) return toast.error("Selecione um PDF");
     if (file.size > MAX_BYTES) return toast.error("PDF acima de 400MB");
     if (!file.name.toLowerCase().endsWith(".pdf")) return toast.error("Arquivo precisa ser PDF");
