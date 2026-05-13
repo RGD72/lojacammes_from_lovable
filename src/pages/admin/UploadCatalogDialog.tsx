@@ -19,7 +19,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024;
 
 export function UploadCatalogDialog({
   open,
