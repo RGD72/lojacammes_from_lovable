@@ -140,8 +140,24 @@ Deno.serve(async (req) => {
     }
 
     const lookId = `look-${page_number}`;
+    // Strict reference validation: must look like a real SKU code (alphanumeric,
+    // contains at least one digit, length >= 3, not a common word). Avoids the
+    // AI hallucinating references when no SKU is printed on the page.
+    const refRegex = /^[A-Za-z0-9][A-Za-z0-9._\-\/]{2,30}$/;
+    const isValidReference = (raw: unknown) => {
+      const s = String(raw ?? "").trim();
+      if (!s) return false;
+      if (!refRegex.test(s)) return false;
+      if (!/[0-9]/.test(s)) return false; // SKUs always have at least one digit
+      // Reject obvious non-references
+      const lower = s.toLowerCase();
+      const blacklist = ["look", "page", "pagina", "página", "ref", "sku", "n/a", "na", "none"];
+      if (blacklist.includes(lower)) return false;
+      return true;
+    };
+
     const cleaned = products
-      .filter((p) => String(p?.reference ?? "").trim().length > 0)
+      .filter((p) => isValidReference(p?.reference))
       .map((p, i) => ({
         reference: String(p.reference).trim(),
         description: String(p.description ?? ""),
