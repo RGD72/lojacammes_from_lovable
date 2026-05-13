@@ -19,7 +19,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-const MAX_BYTES = 200 * 1024 * 1024;
+const MAX_BYTES = 400 * 1024 * 1024;
 
 export function UploadCatalogDialog({
   open,
@@ -94,7 +94,7 @@ export function UploadCatalogDialog({
     e.preventDefault();
     if (!name.trim()) return toast.error("Informe o nome da marca");
     if (!file) return toast.error("Selecione um PDF");
-    if (file.size > MAX_BYTES) return toast.error("PDF acima de 200MB");
+    if (file.size > MAX_BYTES) return toast.error("PDF acima de 400MB");
     if (!file.name.toLowerCase().endsWith(".pdf")) return toast.error("Arquivo precisa ser PDF");
 
     setBusy(true);
@@ -246,7 +246,7 @@ export function UploadCatalogDialog({
             <Input id="brand-name" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} required />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pdf">Catálogo (PDF, até 200MB)</Label>
+            <Label htmlFor="pdf">Catálogo (PDF, até 400MB)</Label>
             <Input
               id="pdf"
               type="file"
