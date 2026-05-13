@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Eye, ArrowRight, Trash2, Monitor } from "lucide-react";
+import { Plus, Eye, ArrowRight, Trash2, Monitor, Play } from "lucide-react";
 import { toast } from "sonner";
 import { UploadCatalogDialog } from "./UploadCatalogDialog";
 import {
@@ -25,6 +25,7 @@ export default function AdminBrands() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [resumeBrand, setResumeBrand] = useState<{ id: string; name: string } | null>(null);
   const [newOrders, setNewOrders] = useState(0);
 
   const load = async () => {
@@ -132,6 +133,15 @@ export default function AdminBrands() {
                 )}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
+                    {b.status === "processing" && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => { setResumeBrand({ id: b.id, name: b.name }); setUploadOpen(true); }}
+                      >
+                        <Play className="h-3.5 w-3.5 mr-1.5" /> Continuar
+                      </Button>
+                    )}
                     <Link to={`/admin/brands/${b.id}`}>
                       <Button variant="outline" size="sm">
                         <Eye className="h-3.5 w-3.5 mr-1.5" /> Editar
@@ -177,7 +187,12 @@ export default function AdminBrands() {
         </div>
       )}
 
-      <UploadCatalogDialog open={uploadOpen} onOpenChange={setUploadOpen} onCreated={load} />
+      <UploadCatalogDialog
+        open={uploadOpen}
+        onOpenChange={(v) => { setUploadOpen(v); if (!v) setResumeBrand(null); }}
+        onCreated={load}
+        resumeBrand={resumeBrand}
+      />
     </div>
   );
 }
