@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-border bg-background/80 backdrop-blur sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link to={role === "admin" ? "/admin" : "/"} className="font-display text-2xl tracking-tight">
-            Atelier <span className="text-primary">·</span> B2B
+            Cammes.com.br
           </Link>
           <nav className="flex items-center gap-1">
             {role === "admin" &&
@@ -58,7 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
       <main key={loc.pathname}>{children}</main>
       <footer className="border-t border-border mt-24 py-8 text-center text-xs tracking-editorial text-muted-foreground">
-        Atelier · plataforma de pedidos b2b
+        Cammes.com.br
       </footer>
     </div>
   );
