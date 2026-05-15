@@ -86,7 +86,7 @@ export default function Login() {
       <div className="hidden lg:flex bg-secondary items-end p-12 relative overflow-hidden">
         <div className="absolute inset-0 opacity-30 bg-gradient-to-br from-accent to-secondary" />
         <div className="relative">
-          <p className="tracking-editorial text-muted-foreground mb-4">Atelier · b2b</p>
+          <p className="tracking-editorial text-muted-foreground mb-4">Cammes.com.br</p>
           <h1 className="font-display text-5xl xl:text-6xl text-balance leading-tight">
             A vitrine das suas marcas, em um só lugar.
           </h1>
