@@ -50,7 +50,6 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (pErr || !profile?.active) return json(403, { error: "Cliente inativo" });
 
-  let payload: { brand_id?: string; items?: InItem[] };
   type Payload = { brand_id?: string; items?: InItem[]; idempotency_key?: string };
   let parsed: Payload;
   try {
