@@ -283,6 +283,7 @@ export type Database = {
           bbox: Json
           created_at: string
           id: string
+          page_image_path: string | null
           page_number: number | null
           position: number
           product_id: string
@@ -292,6 +293,7 @@ export type Database = {
           bbox?: Json
           created_at?: string
           id?: string
+          page_image_path?: string | null
           page_number?: number | null
           position?: number
           product_id: string
@@ -301,6 +303,7 @@ export type Database = {
           bbox?: Json
           created_at?: string
           id?: string
+          page_image_path?: string | null
           page_number?: number | null
           position?: number
           product_id?: string

@@ -1,62 +1,43 @@
-## #8 — Backoff, abstração mínima e rastreio de custo do AI Gateway
+## #9 — Editor de bbox no admin (revisão de recortes do AI)
 
 ### Contexto
-Hoje `process-catalog-page` chama `https://ai.gateway.lovable.dev/v1/chat/completions` direto, sem retry inteligente (apenas o retry de página no cliente) e sem registrar custo/uso. Isso significa:
-
-- **429 transitório derruba a página** — o retry do cliente ajuda, mas estoura o orçamento de tentativas rapidamente em picos.
-- **Zero observabilidade de custo:** não dá para saber quantos tokens/calls cada marca consumiu, nem identificar páginas caras ou regressões do prompt.
-- **Lock-in implícito no Gateway:** a chamada está espalhada inline em meio à edge function — trocar provedor exige reescrita.
-
-A abstração "interface de provedor completa" é overkill para o que existe (uma única call de vision + tool). Vamos pelo enxuto.
+O `process-catalog-page` pede ao Gemini um `bbox: [x,y,w,h]` normalizado por imagem e usa esse recorte na vitrine (via `BboxImage` em `ProductDialog.tsx` / `BrandShowcase.tsx`). Quando o AI erra (corta cabeça, inclui produto vizinho, bbox quase 0×0), hoje **não há como corrigir** sem editar JSON cru no banco. `AdminBrandEdit.tsx` mostra a thumb mas não permite ajustar o enquadramento.
 
 ### Mudanças
 
-**1. Nova tabela `ai_usage_log`**
-```text
-id uuid pk
-created_at timestamptz
-function text                -- 'process-catalog-page'
-provider text                -- 'lovable-gateway'
-model text                   -- 'google/gemini-2.5-flash'
-brand_id uuid                -- nullable
-page_number int              -- nullable
-status int                   -- HTTP status final
-attempts int                 -- quantas tentativas até sucesso/falha
-duration_ms int
-prompt_tokens int
-completion_tokens int
-total_tokens int
-error_message text
-run_id text                  -- X-Lovable-AIG-Run-ID (para correlacionar nos logs do Gateway)
-```
-RLS: só admin lê; service_role escreve. Sem `anon`/`authenticated` insert.
+**1. Persistência da página renderizada**
+Já temos `catalog-pages/brand_<id>/page_<n>.jpg` no Storage (bucket privado). Vamos:
+- Adicionar `page_image_path text` em `product_images` (nullable, populado no insert via `process-catalog-page`) para sabermos qual JPG da página gerou cada recorte.
+- Backfill: para registros existentes, derivar do `(brand_id, page_number)` do produto pai.
 
-**2. Helper `callAiExtractor` (inline em `process-catalog-page`)**
-Encapsula a chamada ao Gateway num único ponto. Implementa:
-- Backoff exponencial em 429 e 5xx: tentativas com delays `500ms, 1500ms, 4000ms` (máx 3 tentativas totais).
-- Honra `Retry-After` (segundos) quando o Gateway mandar.
-- Não tenta de novo em 4xx que não seja 429 (400/401/402/403): retorna o erro imediatamente.
-- Captura `usage.prompt_tokens`, `usage.completion_tokens`, `usage.total_tokens` da resposta.
-- Captura `X-Lovable-AIG-Run-ID` e `X-Lovable-AIG-Log-ID` dos headers para correlação.
-- Adiciona header `X-Lovable-AIG-SDK: native-fetch` para telemetria.
+**2. UI: `BboxEditor` (novo componente)**
+Modal acionado por um botão "Ajustar recorte" em cada thumb de produto em `AdminBrandEdit.tsx`. Mostra:
+- Imagem da página inteira (signed URL do `page_image_path`), com overlay de um retângulo arrastável/redimensionável representando o bbox normalizado.
+- Mostra TODOS os bboxes dos outros produtos da mesma página em cinza (read-only) para evitar sobreposição acidental.
+- Controles: arrastar para mover, alças nos 4 cantos para redimensionar, snap suave a 1% da página.
+- Preview ao vivo do crop (mesma transform do `BboxImage`).
+- Botões: **Salvar**, **Resetar para AI**, **Cancelar**.
 
-Retorna `{ products, usage, runId, status, attempts, durationMs }` ou lança erro com `status` anotado.
+**3. Persistência**
+- Salvar emite `UPDATE product_images SET bbox = $1 WHERE id = $2`.
+- Como `product_images` já tem RLS admin-full-access, basta o client chamar PostgREST direto. Sem edge function nova.
+- Valida 0 ≤ x,y,w,h ≤ 1, w*h ≥ 0.01, x+w ≤ 1, y+h ≤ 1.
 
-**3. Persistir o uso**
-Ao fim de cada call (sucesso ou erro), `INSERT` em `ai_usage_log` com os campos acima. Best-effort — falha no insert não derruba o processamento.
-
-**4. Mensagens de erro mais precisas**
-Mapear status do Gateway:
-- 429 (após retries) → "Limite de taxa do AI excedido — tente novamente em alguns minutos."
-- 402 → "Créditos do AI esgotados."
-- 5xx (após retries) → "AI gateway instável; tente novamente."
+**4. Indicador de bbox suspeito**
+Em `AdminBrandEdit.tsx`, badge "⚠ recorte" ao lado de produtos cujo bbox tenha área < 5% ou que estejam em `[0,0,1,1]` (default não-extraído). Ajuda admin a focar nos casos ruins primeiro.
 
 ### Não-objetivos
-- Abstração completa de provedor (OpenAI/Anthropic/etc.).
-- Adoção do Vercel AI SDK — a chamada atual é tool-calling com `image_url`, segue funcionando com `fetch` puro. Migração para o SDK fica como item separado se quisermos streaming/embeddings.
-- UI de custos no admin (planilha viva). Por agora, o admin consulta `ai_usage_log` via SQL/Supabase.
+- Re-rodar AI ou mexer no prompt — só correção manual.
+- Edição de qual imagem é capa (drag-reorder) — segue como item separado.
+- Recorte server-side físico (gerar novo JPG cropado em `product-images`). Mantemos a estratégia atual: imagem da página inteira + transform CSS via bbox, que é o que `BboxImage` já faz e funciona bem.
 
 ### Resultado
-- Resiliente a 429/5xx transitórios sem cascata de retries do cliente.
-- Cada chamada deixa rastro de custo correlacionável com `run_id` dos logs do Gateway.
-- Trocar provedor amanhã = reescrever só o helper.
+- Admin corrige enquadramentos errados em segundos, sem mexer em SQL.
+- Vitrine reflete a correção imediatamente (mesma source-of-truth `product_images.bbox`).
+- Confiabilidade percebida do AI sobe sem precisar retreinar prompt.
+
+### Detalhes técnicos
+- Migration: `ALTER TABLE product_images ADD COLUMN page_image_path text;` + backfill via `UPDATE product_images SET page_image_path = 'brand_'||p.brand_id||'/page_'||p.page_number||'.jpg' FROM products p WHERE product_images.product_id = p.id;`
+- `process-catalog-page`: ao inserir `product_images`, popular `page_image_path` com o mesmo path que já é usado no upload da página.
+- Novo arquivo: `src/components/admin/BboxEditor.tsx` (dialog + canvas overlay puro em CSS/JS, sem libs novas; pointer events para drag/resize).
+- Em `AdminBrandEdit.tsx`: trazer `product_images(id, url, bbox, position, page_image_path)` no select, expandir thumbnail para listar as N imagens em grid pequeno, cada uma com "Ajustar".
