@@ -157,6 +157,7 @@ export type Database = {
       orders: {
         Row: {
           brand_id: string
+          client_idempotency_key: string | null
           client_name: string
           created_at: string
           id: string
@@ -167,6 +168,7 @@ export type Database = {
         }
         Insert: {
           brand_id: string
+          client_idempotency_key?: string | null
           client_name: string
           created_at?: string
           id?: string
@@ -177,6 +179,7 @@ export type Database = {
         }
         Update: {
           brand_id?: string
+          client_idempotency_key?: string | null
           client_name?: string
           created_at?: string
           id?: string
