@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { useCart, money } from "@/lib/cart";
 import { toast } from "sonner";
+import { useSignedUrl } from "@/lib/storage";
 
 interface Product {
   id: string; brand_id: string; reference: string; description: string;
@@ -151,6 +152,7 @@ function DialogGallery({ product }: { product: Product }) {
 }
 
 function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: string }) {
+  const signed = useSignedUrl(src);
   const valid =
     Array.isArray(bbox) &&
     bbox.length === 4 &&
@@ -169,7 +171,7 @@ function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: strin
   return (
     <div className="w-full h-full overflow-hidden">
       <img
-        src={src}
+        src={signed ?? src}
         alt={alt}
         className="w-full h-full object-cover"
         style={{ transform: `translate(${tx}%, ${ty}%) scale(${scale})`, transformOrigin: "center center" }}
