@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Trash2, ArrowLeft, Save, LogOut } from "lucide-react";
 import { SignedImg } from "@/lib/storage";
+import { BboxEditor } from "@/components/admin/BboxEditor";
 
 interface Product {
   id: string;
@@ -18,7 +19,13 @@ interface Product {
   sizes: string[];
   price: number;
   image_url: string | null;
-  product_images?: { url: string; position: number }[] | null;
+  product_images?: {
+    id: string;
+    url: string;
+    position: number;
+    bbox: number[] | null;
+    page_image_path: string | null;
+  }[] | null;
 }
 
 export default function AdminBrandEdit() {
@@ -35,7 +42,7 @@ export default function AdminBrandEdit() {
       supabase.from("brands").select("name, commission_pct").eq("id", id).maybeSingle(),
       supabase
         .from("products")
-        .select("*, product_images(url, position)")
+        .select("*, product_images(id, url, position, bbox, page_image_path)")
         .eq("brand_id", id)
         .order("sort_order"),
     ]);
