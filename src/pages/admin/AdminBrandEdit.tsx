@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Trash2, ArrowLeft, Save, LogOut } from "lucide-react";
+import { SignedImg } from "@/lib/storage";
 
 interface Product {
   id: string;
