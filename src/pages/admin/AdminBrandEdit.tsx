@@ -193,7 +193,7 @@ function ProductRow({
     <div className="bg-card border border-border rounded p-4 grid grid-cols-12 gap-3 items-start">
       <div className="col-span-2">
         {draft.image_url && (
-          <img src={draft.image_url} alt="" className="w-full aspect-square object-cover rounded" />
+          <SignedImg src={draft.image_url} alt="" className="w-full aspect-square object-cover rounded" />
         )}
         <p className="text-[10px] tracking-editorial text-muted-foreground mt-1">Look {draft.page_number}</p>
       </div>
