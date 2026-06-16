@@ -211,7 +211,7 @@ export function UploadCatalogDialog({
       setStage("Conferindo importação…");
       const { data: dbProducts } = await supabase
         .from("products")
-        .select("page_number, reference, image_url, image_urls")
+        .select("page_number, reference, product_images(url)")
         .eq("brand_id", brand.id);
       const pagesWithProducts = new Set((dbProducts ?? []).map((r) => r.page_number));
       const missingPages: number[] = [];
@@ -219,7 +219,7 @@ export function UploadCatalogDialog({
         if (!pagesWithProducts.has(p)) missingPages.push(p);
       }
       const missingImages = (dbProducts ?? []).filter(
-        (r) => !r.image_url && (!Array.isArray(r.image_urls) || r.image_urls.length === 0),
+        (r) => !Array.isArray(r.product_images) || r.product_images.length === 0,
       );
       if (missingPages.length === 0 && missingImages.length === 0) {
         setStage("Concluído");

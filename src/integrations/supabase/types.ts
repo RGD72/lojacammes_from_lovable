@@ -216,6 +216,44 @@ export type Database = {
           },
         ]
       }
+      product_images: {
+        Row: {
+          bbox: Json
+          created_at: string
+          id: string
+          page_number: number | null
+          position: number
+          product_id: string
+          url: string
+        }
+        Insert: {
+          bbox?: Json
+          created_at?: string
+          id?: string
+          page_number?: number | null
+          position?: number
+          product_id: string
+          url: string
+        }
+        Update: {
+          bbox?: Json
+          created_at?: string
+          id?: string
+          page_number?: number | null
+          position?: number
+          product_id?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_images_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           brand_id: string

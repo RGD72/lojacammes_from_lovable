@@ -1,44 +1,62 @@
-## #3 — Ingestão recuperável (também resolve #4)
+## #7 — Normalizar imagens dos produtos
 
-### Contexto
-Hoje a orquestração inteira vive no navegador: render PDF → upload página por página → invoca `process-catalog-page`. Se a aba fechar, a marca fica presa em `processing` e a única "fonte de verdade" do progresso é o contador `brands.processed_pages`, atualizado por read-modify-write (não-atômico — #4).
+### Problema
+Hoje, em `public.products` convivem três campos para representar imagens do mesmo produto:
 
-Reescrever para orquestração 100% server-side exigiria renderizar PDF dentro de uma edge function Deno (sem biblioteca madura) ou substituir o pipeline pelo modelo "PDF nativo no Gemini" (como o `cammes` faz), o que muda o produto (perde recortes por bbox).
+- `image_url text` — a "primeira" imagem (legado).
+- `image_urls text[]` — todas as URLs, na ordem inserida.
+- `image_bboxes jsonb[]` — bboxes paralelas, **uma por índice** de `image_urls`.
 
-### Proposta enxuta (pragmática)
-Manter o cliente renderizando o PDF (ele já tem o arquivo na máquina antes do upload), mas **mover a fonte de verdade do progresso para o banco** numa tabela idempotente por página. Isso elimina o contador frágil, dá retomada confiável e prepara o terreno para um worker server-side no futuro.
+Manter dois arrays paralelos é frágil:
+- Qualquer escrita que mude um sem o outro corrompe o alinhamento.
+- Não há como ordenar, marcar uma como "principal", remover uma específica nem armazenar metadados (página de origem, dimensão usada, hash) sem mais arrays paralelos.
+- `image_url` é redundante e força a UI a fazer fallback em cada renderizador.
 
-### Mudanças
+### Mudança
+Substituir os três campos por uma tabela filha normalizada:
 
-**1. Nova tabela `catalog_page_jobs`**
 ```text
-brand_id uuid, page_number int, status text (pending|done|error),
-error_message text, attempts int, created_at, updated_at
-UNIQUE(brand_id, page_number)
+product_images
+  id uuid pk
+  product_id uuid fk -> products(id) on delete cascade
+  url text not null
+  bbox jsonb           -- [x, y, w, h] em frações 0..1, opcional
+  page_number int      -- página do catálogo de onde veio
+  position int         -- ordem (0 = principal)
+  created_at timestamptz
+  UNIQUE (product_id, url)
 ```
-RLS: admin total; cliente nenhum acesso.
 
-**2. `process-catalog-page` (edge function)**
-- No início: `UPSERT` em `catalog_page_jobs` com `status='pending'`, `attempts = attempts + 1`.
-- No sucesso: `UPDATE ... SET status='done', error_message=null`.
-- No erro: `UPDATE ... SET status='error', error_message=...`.
-- **Remove** o read-modify-write de `brands.processed_pages` (resolve #4).
-- Quando a página marcar `done`, recalcula `processed_pages = count(*) FROM catalog_page_jobs WHERE brand_id=? AND status='done'`. Se igual a `total_pages`, marca `status='unpublished'`. Tudo numa única transação via RPC `recount_brand_progress(brand_id)`.
+RLS: mesma regra de leitura de `products` (admin total; cliente ativo lê quando a marca dona está `published`). Sem INSERT/UPDATE para `authenticated` — só admin e edge functions (service role).
 
-**3. Cliente `UploadCatalogDialog`**
-- Em modo "novo": como hoje, mas a lista de páginas pendentes vem de `catalog_page_jobs` (não mais de `products.page_number`).
-- Em modo "retomar": consulta `catalog_page_jobs WHERE brand_id=? AND status != 'done'` para saber o que reprocessar. Páginas com `status='done'` são puladas mesmo que o usuário re-renderize tudo.
-- Mantém o loop sequencial e o cancel atual.
+### O que muda no código
 
-**4. Função `admin-resume-brand` (opcional, pequena)**
-Permite ao admin "destravar" uma marca presa: zera `status` para `processing` e devolve a lista de páginas pendentes — útil quando a aba caiu sem nem ter renderizado.
+1. **Migration**
+   - Cria `product_images` + GRANTs + RLS + policies.
+   - Backfill: para cada `products.id`, gera linhas a partir de `image_urls`/`image_bboxes` (zip por índice). Se `image_urls` estiver vazio mas `image_url` não, gera uma linha única.
+   - Mantém os campos antigos por enquanto (`image_url`, `image_urls`, `image_bboxes`) para não quebrar nada em runtime — derruba numa migration seguinte (#7b) quando todos os readers estiverem migrados.
 
-### Fora de escopo (separar em itens próprios)
-- Worker server-side que orquestra sem o navegador (exige render de PDF no Deno ou mudar o modelo de extração — proposta #3 do `cammes`).
-- Substituir bbox-extraction por PDF-nativo no Gemini.
-- Editor de revisão de bbox no admin (#9).
+2. **`process-catalog-page` (edge function)**
+   - Em vez do read-modify-write dos arrays, faz `INSERT ... ON CONFLICT (product_id, url) DO NOTHING` em `product_images` com `bbox`, `page_number`, `position`.
+   - Para produto novo: cria o produto e insere a primeira `product_images` (`position = 0`).
+   - Para repetição da mesma `reference`: insere mais uma `product_images` (próxima `position`).
+   - Para de gravar `image_url`/`image_urls`/`image_bboxes`.
+
+3. **Readers** (`ProductDialog`, `BrandShowcase`, `AdminBrandEdit`, `CartDrawer`, `orderPdf`, `UploadCatalogDialog`)
+   - Passam a buscar `product_images(url, bbox, position)` (join/embed do PostgREST: `select("*, product_images(url, bbox, position)")`).
+   - "Imagem principal" = `product_images` com menor `position` (fallback: primeira).
+   - Removem todos os fallbacks `image_url ?? image_urls[0]`.
+   - `UploadCatalogDialog` (modo "retomar") deixa de olhar `products.image_url` e usa a nova tabela `catalog_page_jobs` (já existente, do #3) como fonte de páginas pendentes — esse loop já foi migrado parcialmente; aqui só removemos o último vestígio.
+
+4. **`order_items`**
+   - Hoje grava `image_url` (snapshot). Mantemos a coluna (snapshot histórico do pedido); muda só a forma como é obtida no submit-order: `select position=0 from product_images where product_id=?`.
+
+### Fora de escopo
+- Derrubar `products.image_url` / `image_urls` / `image_bboxes` — fica para uma migration de cleanup (#7b) depois que os readers estiverem em produção e validados.
+- Editor de bbox no admin (#9).
+- Reordenação manual de imagens (UI).
 
 ### Resultado
-- Retomada confiável após queda de aba/conexão (sem reimportar páginas já feitas).
-- Progresso atômico, sem corrida (resolve #4 sem migração adicional).
-- Mantém o produto atual (bbox, recortes) intacto.
+- Modelo relacional sem arrays paralelos, sem campo redundante.
+- Reprocessar uma página vira `INSERT ... ON CONFLICT DO NOTHING` (idempotente).
+- Cada imagem ganha bbox/página/ordem próprios sem risco de desalinhamento.
