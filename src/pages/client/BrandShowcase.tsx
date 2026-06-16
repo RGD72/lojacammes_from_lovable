@@ -16,6 +16,7 @@ interface Product {
   colors: string[]; sizes: string[]; price: number; image_url: string | null;
   image_urls?: string[] | null;
   image_bboxes?: number[][] | null;
+  product_images?: { url: string; bbox: number[] | null; position: number }[] | null;
 }
 
 export default function BrandShowcase() {
@@ -35,7 +36,12 @@ export default function BrandShowcase() {
     (async () => {
       const [{ data: b }, { data: p }] = await Promise.all([
         supabase.from("brands").select("id, name, catalog_pdf_url").eq("id", id).maybeSingle(),
-        supabase.from("products").select("*").eq("brand_id", id).order("page_number").order("sort_order"),
+        supabase
+          .from("products")
+          .select("*, product_images(url, bbox, position)")
+          .eq("brand_id", id)
+          .order("page_number")
+          .order("sort_order"),
       ]);
       setBrand((b ?? null) as Brand | null);
       setItems((p ?? []) as Product[]);
@@ -145,12 +151,7 @@ export default function BrandShowcase() {
 }
 
 function ProductGallery({ product }: { product: Product }) {
-  const imgs = (product.image_urls && product.image_urls.length > 0)
-    ? product.image_urls
-    : (product.image_url ? [product.image_url] : []);
-  const boxes = (product.image_bboxes && product.image_bboxes.length === imgs.length)
-    ? product.image_bboxes
-    : imgs.map(() => [0, 0, 1, 1] as number[]);
+  const { imgs, boxes } = resolveImages(product);
   if (imgs.length === 0) {
     return (
       <div className="aspect-[3/4] bg-secondary overflow-hidden rounded flex items-center justify-center text-muted-foreground tracking-editorial text-[10px]">
