@@ -56,6 +56,47 @@ export type Database = {
         }
         Relationships: []
       }
+      catalog_page_jobs: {
+        Row: {
+          attempts: number
+          brand_id: string
+          created_at: string
+          error_message: string | null
+          id: string
+          page_number: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          brand_id: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          page_number: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          brand_id?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          page_number?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_page_jobs_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_items: {
         Row: {
           color: string
@@ -284,6 +325,7 @@ export type Database = {
         Returns: boolean
       }
       is_active_client: { Args: { _user_id: string }; Returns: boolean }
+      recount_brand_progress: { Args: { _brand_id: string }; Returns: number }
     }
     Enums: {
       app_role: "admin" | "client"
