@@ -21,28 +21,43 @@ Deno.serve(async (req) => {
       { auth: { persistSession: false } },
     );
 
-    const { count, error: countErr } = await admin
-      .from("user_roles")
-      .select("*", { count: "exact", head: true })
-      .eq("role", "admin");
-    if (countErr) throw countErr;
-    if ((count ?? 0) > 0) return json({ error: "Admin already exists" }, 403);
+    // Atomically claim the singleton bootstrap lock. Only one concurrent
+    // caller can win; everyone else gets `false` and is rejected here.
+    const { data: claimed, error: claimErr } = await admin.rpc("try_claim_admin_bootstrap");
+    if (claimErr) throw claimErr;
+    if (!claimed) return json({ error: "Admin already exists" }, 403);
 
-    const { data: created, error: cErr } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { name: name ?? "Admin" },
-    });
-    if (cErr) throw cErr;
+    let userId: string | null = null;
+    try {
+      const { data: created, error: cErr } = await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name: name ?? "Admin" },
+      });
+      if (cErr) throw cErr;
 
-    const userId = created.user!.id;
-    // Replace default 'client' role with 'admin'
-    await admin.from("user_roles").delete().eq("user_id", userId);
-    const { error: rErr } = await admin
-      .from("user_roles")
-      .insert({ user_id: userId, role: "admin" });
-    if (rErr) throw rErr;
+      userId = created.user!.id;
+      // Replace default 'client' role with 'admin'
+      await admin.from("user_roles").delete().eq("user_id", userId);
+      const { error: rErr } = await admin
+        .from("user_roles")
+        .insert({ user_id: userId, role: "admin" });
+      if (rErr) throw rErr;
+
+      // Mark who claimed the lock (best-effort).
+      await admin
+        .from("admin_bootstrap_lock")
+        .update({ claimed_by_user_id: userId })
+        .eq("id", "singleton");
+    } catch (inner) {
+      // Roll back the lock so the owner can retry; also clean up the half-created auth user.
+      if (userId) {
+        try { await admin.auth.admin.deleteUser(userId); } catch { /* ignore */ }
+      }
+      await admin.rpc("release_admin_bootstrap");
+      throw inner;
+    }
 
     return json({ ok: true, user_id: userId });
   } catch (e) {

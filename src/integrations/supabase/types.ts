@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_bootstrap_lock: {
+        Row: {
+          claimed_at: string
+          claimed_by_user_id: string | null
+          id: string
+        }
+        Insert: {
+          claimed_at?: string
+          claimed_by_user_id?: string | null
+          id: string
+        }
+        Update: {
+          claimed_at?: string
+          claimed_by_user_id?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
       brands: {
         Row: {
           catalog_pdf_url: string | null
@@ -329,6 +347,8 @@ export type Database = {
       }
       is_active_client: { Args: { _user_id: string }; Returns: boolean }
       recount_brand_progress: { Args: { _brand_id: string }; Returns: number }
+      release_admin_bootstrap: { Args: never; Returns: undefined }
+      try_claim_admin_bootstrap: { Args: never; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "client"
