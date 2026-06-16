@@ -21,24 +21,48 @@ interface CartCtx {
   clearBrand: (brandId: string) => void;
   countFor: (brandId: string) => number;
   totalFor: (brandId: string) => number;
+  idempotencyKeyFor: (brandId: string) => string;
+  rotateIdempotencyKey: (brandId: string) => void;
 }
 
 const Ctx = createContext<CartCtx>(null as unknown as CartCtx);
 const KEY = "b2b_carts_v1";
+const IKEY = "b2b_cart_idem_v1";
+
+type IdemMap = Record<string, string>;
+
+function uuid(): string {
+  try {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  } catch (_e) { /* ignore */ }
+  // RFC4122 v4 fallback
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [carts, setCarts] = useState<Carts>({});
+  const [idem, setIdem] = useState<IdemMap>({});
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) setCarts(JSON.parse(raw));
+      const rawI = localStorage.getItem(IKEY);
+      if (rawI) setIdem(JSON.parse(rawI));
     } catch (_e) { /* ignore */ }
   }, []);
 
   useEffect(() => {
     localStorage.setItem(KEY, JSON.stringify(carts));
   }, [carts]);
+
+  useEffect(() => {
+    localStorage.setItem(IKEY, JSON.stringify(idem));
+  }, [idem]);
 
   const value = useMemo<CartCtx>(() => ({
     carts,
@@ -72,7 +96,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
       (carts[brandId] ?? []).reduce((s, i) => s + i.quantity, 0),
     totalFor: (brandId) =>
       (carts[brandId] ?? []).reduce((s, i) => s + i.quantity * i.unit_price, 0),
-  }), [carts]);
+    idempotencyKeyFor: (brandId) => {
+      const existing = idem[brandId];
+      if (existing) return existing;
+      const k = uuid();
+      setIdem((m) => ({ ...m, [brandId]: k }));
+      return k;
+    },
+    rotateIdempotencyKey: (brandId) =>
+      setIdem((m) => {
+        const next = { ...m };
+        delete next[brandId];
+        return next;
+      }),
+  }), [carts, idem]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
