@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { generateOrderPdf } from "@/lib/orderPdf";
+import { SignedImg } from "@/lib/storage";
 
 interface Brand { id: string; name: string; }
 
@@ -104,7 +105,7 @@ export function CartDrawer({
             <div className="space-y-3">
               {items.map((i, idx) => (
                 <div key={idx} className="flex items-center gap-3 border-b border-border pb-3">
-                  {i.image_url && <img src={i.image_url} alt="" className="w-14 h-14 object-cover rounded" />}
+                  {i.image_url && <SignedImg src={i.image_url} alt="" className="w-14 h-14 object-cover rounded" />}
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] tracking-editorial text-muted-foreground">{i.reference}</p>
                     <p className="font-display text-lg leading-tight truncate">{i.description}</p>
