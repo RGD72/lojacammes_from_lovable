@@ -88,6 +88,34 @@ Deno.serve(async (req) => {
     }
     const pageUrl: string = page_url;
 
+    // Mark the page job as pending (idempotent) and bump attempts.
+    await admin
+      .from("catalog_page_jobs")
+      .upsert(
+        {
+          brand_id,
+          page_number,
+          status: "pending",
+          error_message: null,
+        },
+        { onConflict: "brand_id,page_number" },
+      );
+    // Increment attempts in a separate update so upsert doesn't reset it.
+    await admin.rpc; // no-op to keep TS happy
+    {
+      const { data: jobRow } = await admin
+        .from("catalog_page_jobs")
+        .select("attempts")
+        .eq("brand_id", brand_id)
+        .eq("page_number", page_number)
+        .maybeSingle();
+      await admin
+        .from("catalog_page_jobs")
+        .update({ attempts: (jobRow?.attempts ?? 0) + 1 })
+        .eq("brand_id", brand_id)
+        .eq("page_number", page_number);
+    }
+
     // Buckets are now private. Generate a short-lived signed URL so the AI
     // gateway can fetch the page image. We keep `pageUrl` (the public-format
     // URL) as the value stored in the DB so the client-side signer can
@@ -144,9 +172,18 @@ Deno.serve(async (req) => {
     if (!aiResp.ok) {
       const t = await aiResp.text();
       console.error("AI error", aiResp.status, t);
-      if (aiResp.status === 429) return json({ error: "AI rate limit exceeded, try again later." }, 429);
-      if (aiResp.status === 402) return json({ error: "AI credits exhausted. Add funds to your workspace." }, 402);
-      return json({ error: "AI gateway error" }, 500);
+      const errMsg =
+        aiResp.status === 429
+          ? "AI rate limit exceeded, try again later."
+          : aiResp.status === 402
+            ? "AI credits exhausted. Add funds to your workspace."
+            : "AI gateway error";
+      await admin
+        .from("catalog_page_jobs")
+        .update({ status: "error", error_message: errMsg })
+        .eq("brand_id", brand_id)
+        .eq("page_number", page_number);
+      return json({ error: errMsg }, aiResp.status === 429 ? 429 : aiResp.status === 402 ? 402 : 500);
     }
 
     const aiJson = await aiResp.json();
@@ -246,22 +283,36 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Update progress
-    const { data: brand } = await admin
-      .from("brands")
-      .select("processed_pages")
-      .eq("id", brand_id)
-      .single();
-    const newProcessed = (brand?.processed_pages ?? 0) + 1;
-    const updates: Record<string, unknown> = { processed_pages: newProcessed };
-    if (total_pages && newProcessed >= total_pages) {
-      updates.status = "unpublished"; // ready for review
-    }
-    await admin.from("brands").update(updates).eq("id", brand_id);
+    // Mark page done and recount brand progress atomically.
+    await admin
+      .from("catalog_page_jobs")
+      .update({ status: "done", error_message: null })
+      .eq("brand_id", brand_id)
+      .eq("page_number", page_number);
+    await admin.rpc("recount_brand_progress", { _brand_id: brand_id });
 
     return json({ ok: true, inserted, updated, page_url: pageUrl });
   } catch (e) {
     console.error("process-catalog-page error:", e);
+    // Best-effort: mark the job as errored so the client can resume it later.
+    try {
+      const body = await req.clone().json().catch(() => null);
+      const bid = body?.brand_id;
+      const pn = body?.page_number;
+      if (bid && pn) {
+        const url = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const admin2 = createClient(url, serviceKey, { auth: { persistSession: false } });
+        await admin2
+          .from("catalog_page_jobs")
+          .update({
+            status: "error",
+            error_message: e instanceof Error ? e.message : "Unknown error",
+          })
+          .eq("brand_id", bid)
+          .eq("page_number", pn);
+      }
+    } catch (_) { /* ignore */ }
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
   }
 });
