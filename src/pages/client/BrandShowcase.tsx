@@ -7,6 +7,7 @@ import { ArrowLeft, Download, ShoppingBag, X } from "lucide-react";
 import { useCart, money } from "@/lib/cart";
 import { ProductDialog } from "@/components/ProductDialog";
 import { CartDrawer } from "@/components/CartDrawer";
+import { signStorageUrl, useSignedUrl } from "@/lib/storage";
 
 interface Brand { id: string; name: string; catalog_pdf_url: string | null; }
 interface Product {
@@ -92,9 +93,15 @@ export default function BrandShowcase() {
         <div className="flex items-center gap-2 flex-wrap">
           <Input placeholder="Buscar referência ou descrição…" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />
           {brand.catalog_pdf_url && (
-            <a href={brand.catalog_pdf_url} target="_blank" rel="noreferrer">
-              <Button variant="outline"><Download className="h-4 w-4 mr-2" />Catálogo PDF</Button>
-            </a>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const url = await signStorageUrl(brand.catalog_pdf_url);
+                if (url) window.open(url, "_blank", "noopener,noreferrer");
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />Catálogo PDF
+            </Button>
           )}
           <Button onClick={() => setCartOpen(true)} className="relative">
             <ShoppingBag className="h-4 w-4 mr-2" /> Pedido
@@ -170,6 +177,7 @@ function ProductGallery({ product }: { product: Product }) {
 }
 
 function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: string }) {
+  const signed = useSignedUrl(src);
   const valid =
     Array.isArray(bbox) &&
     bbox.length === 4 &&
@@ -193,7 +201,7 @@ function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: strin
   return (
     <div className="w-full h-full overflow-hidden">
       <img
-        src={src}
+        src={signed ?? src}
         alt={alt}
         loading="lazy"
         className="w-full h-full object-cover"
