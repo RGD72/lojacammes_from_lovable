@@ -10,6 +10,7 @@ interface Product {
   material: string; colors: string[]; sizes: string[]; price: number; image_url: string | null;
   image_urls?: string[] | null;
   image_bboxes?: number[][] | null;
+  product_images?: { url: string; bbox: number[] | null; position: number }[] | null;
 }
 
 export function ProductDialog({
@@ -34,13 +35,14 @@ export function ProductDialog({
     if (product.colors.length > 0 && !color) return toast.error("Escolha uma cor");
     if (product.sizes.length > 0 && !size) return toast.error("Escolha um tamanho");
     if (qty < 1) return toast.error("Quantidade inválida");
+    const cover = resolveImages(product).imgs[0];
     addItem(brandId, {
       product_id: product.id,
       reference: product.reference,
       description: product.description,
       color, size, quantity: qty,
       unit_price: Number(product.price),
-      image_url: product.image_url ?? undefined,
+      image_url: cover ?? product.image_url ?? undefined,
     });
     toast.success("Adicionado ao pedido");
     onClose();
@@ -124,12 +126,7 @@ export function ProductDialog({
 }
 
 function DialogGallery({ product }: { product: Product }) {
-  const imgs = (product.image_urls && product.image_urls.length > 0)
-    ? product.image_urls
-    : (product.image_url ? [product.image_url] : []);
-  const boxes = (product.image_bboxes && product.image_bboxes.length === imgs.length)
-    ? product.image_bboxes
-    : imgs.map(() => [0, 0, 1, 1] as number[]);
+  const { imgs, boxes } = resolveImages(product);
   if (imgs.length === 0) {
     return <div className="aspect-[3/4] bg-secondary rounded" />;
   }
