@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { SignedImg } from "@/lib/storage";
 import { Switch } from "@/components/ui/switch";
 import { Plus, Eye, ArrowRight, Trash2, Monitor, Play } from "lucide-react";
 import { toast } from "sonner";
@@ -104,7 +105,7 @@ export default function AdminBrands() {
             <article key={b.id} className="bg-card border border-border rounded overflow-hidden group">
               <div className="aspect-[3/4] bg-secondary relative overflow-hidden">
                 {b.cover_image_url ? (
-                  <img
+                  <SignedImg
                     src={b.cover_image_url}
                     alt={b.name}
                     className="w-full h-full object-cover transition-transform group-hover:scale-105"
