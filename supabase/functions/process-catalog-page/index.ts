@@ -82,11 +82,32 @@ Deno.serve(async (req) => {
       .eq("user_id", userData.user.id);
     if (!roles?.some((r) => r.role === "admin")) return json({ error: "Forbidden" }, 403);
 
-    const { brand_id, page_number, page_url, total_pages, is_first } = await req.json();
+    const { brand_id, page_number, page_url, page_path, total_pages, is_first } = await req.json();
     if (!brand_id || !page_number || !page_url) {
       return json({ error: "brand_id, page_number, page_url required" }, 400);
     }
     const pageUrl: string = page_url;
+
+    // Buckets are now private. Generate a short-lived signed URL so the AI
+    // gateway can fetch the page image. We keep `pageUrl` (the public-format
+    // URL) as the value stored in the DB so the client-side signer can
+    // re-issue signed URLs on demand from the same stable string.
+    let pathForSign: string | null = typeof page_path === "string" ? page_path : null;
+    if (!pathForSign) {
+      const m = pageUrl.match(/\/storage\/v1\/object\/(?:public|sign)\/catalog-pages\/([^?]+)/);
+      if (m) pathForSign = decodeURIComponent(m[1]);
+    }
+    let aiImageUrl = pageUrl;
+    if (pathForSign) {
+      const { data: signed, error: sErr } = await admin.storage
+        .from("catalog-pages")
+        .createSignedUrl(pathForSign, 60 * 60);
+      if (sErr || !signed?.signedUrl) {
+        console.error("sign page url failed", sErr);
+        return json({ error: "Failed to sign page URL" }, 500);
+      }
+      aiImageUrl = signed.signedUrl;
+    }
 
     // First page becomes the cover
     if (is_first) {
@@ -111,7 +132,7 @@ Deno.serve(async (req) => {
             role: "user",
             content: [
               { type: "text", text: `Extract all products visible on page ${page_number}.` },
-              { type: "image_url", image_url: { url: pageUrl } },
+              { type: "image_url", image_url: { url: aiImageUrl } },
             ],
           },
         ],
