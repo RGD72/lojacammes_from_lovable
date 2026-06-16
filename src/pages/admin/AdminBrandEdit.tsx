@@ -18,6 +18,7 @@ interface Product {
   sizes: string[];
   price: number;
   image_url: string | null;
+  product_images?: { url: string; position: number }[] | null;
 }
 
 export default function AdminBrandEdit() {
@@ -32,7 +33,11 @@ export default function AdminBrandEdit() {
     if (!id) return;
     const [{ data: b }, { data: p }] = await Promise.all([
       supabase.from("brands").select("name, commission_pct").eq("id", id).maybeSingle(),
-      supabase.from("products").select("*").eq("brand_id", id).order("sort_order"),
+      supabase
+        .from("products")
+        .select("*, product_images(url, position)")
+        .eq("brand_id", id)
+        .order("sort_order"),
     ]);
     setBrandName(b?.name ?? "");
     setCommissionPct(Number((b as { commission_pct?: number } | null)?.commission_pct ?? 30));
@@ -193,9 +198,17 @@ function ProductRow({
   return (
     <div className="bg-card border border-border rounded p-4 grid grid-cols-12 gap-3 items-start">
       <div className="col-span-2">
-        {draft.image_url && (
-          <SignedImg src={draft.image_url} alt="" className="w-full aspect-square object-cover rounded" />
-        )}
+        {(() => {
+          const cover =
+            (draft.product_images ?? [])
+              .slice()
+              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.url ??
+            draft.image_url ??
+            null;
+          return cover ? (
+            <SignedImg src={cover} alt="" className="w-full aspect-square object-cover rounded" />
+          ) : null;
+        })()}
         <p className="text-[10px] tracking-editorial text-muted-foreground mt-1">Look {draft.page_number}</p>
       </div>
       <div className="col-span-10 grid grid-cols-2 lg:grid-cols-4 gap-3">
