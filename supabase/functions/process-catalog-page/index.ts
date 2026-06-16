@@ -247,27 +247,33 @@ Deno.serve(async (req) => {
 
       const { data: existing } = await admin
         .from("products")
-        .select("id, image_urls, image_url, image_bboxes")
+        .select("id")
         .eq("brand_id", brand_id)
         .eq("reference", p.reference)
         .maybeSingle();
 
       if (existing) {
-        const current: string[] = Array.isArray(existing.image_urls) ? existing.image_urls : [];
-        const currentBoxes: number[][] = Array.isArray(existing.image_bboxes)
-          ? (existing.image_bboxes as number[][])
-          : [];
-        if (!current.includes(productImageUrl)) {
-          const next = [...current, productImageUrl];
-          const nextBoxes = [...currentBoxes, productBbox];
-          await admin
-            .from("products")
-            .update({ image_urls: next, image_bboxes: nextBoxes })
-            .eq("id", existing.id);
-          updated++;
-        }
+        // Append a new image (idempotent on (product_id, url)).
+        const { count: existingCount } = await admin
+          .from("product_images")
+          .select("id", { count: "exact", head: true })
+          .eq("product_id", existing.id);
+        const { error: imgErr } = await admin
+          .from("product_images")
+          .upsert(
+            {
+              product_id: existing.id,
+              url: productImageUrl,
+              bbox: productBbox,
+              page_number,
+              position: existingCount ?? 0,
+            },
+            { onConflict: "product_id,url", ignoreDuplicates: true },
+          );
+        if (imgErr) throw imgErr;
+        updated++;
       } else {
-        const { error: insErr } = await admin.from("products").insert({
+        const { data: created, error: insErr } = await admin.from("products").insert({
           brand_id,
           page_number,
           look_id: lookId,
@@ -277,12 +283,17 @@ Deno.serve(async (req) => {
           colors: p.colors,
           sizes: p.sizes,
           price: p.price,
-          image_url: productImageUrl,
-          image_urls: [productImageUrl],
-          image_bboxes: [productBbox],
           sort_order: p.sort_order,
-        });
+        }).select("id").single();
         if (insErr) throw insErr;
+        const { error: imgErr } = await admin.from("product_images").insert({
+          product_id: created!.id,
+          url: productImageUrl,
+          bbox: productBbox,
+          page_number,
+          position: 0,
+        });
+        if (imgErr) throw imgErr;
         inserted++;
       }
     }
