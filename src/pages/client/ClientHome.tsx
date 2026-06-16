@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { SignedImg } from "@/lib/storage";
 
 interface Brand { id: string; name: string; cover_image_url: string | null; }
 
@@ -29,7 +30,11 @@ export default function ClientHome() {
             <Link key={b.id} to={`/brand/${b.id}`} className="group block">
               <div className="aspect-[3/4] bg-secondary overflow-hidden rounded">
                 {b.cover_image_url ? (
-                  <img src={b.cover_image_url} alt={b.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                  <SignedImg
+                    src={b.cover_image_url}
+                    alt={b.name}
+                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                  />
                 ) : (
                   <div className="w-full h-full" />
                 )}
