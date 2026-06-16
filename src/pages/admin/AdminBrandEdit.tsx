@@ -205,17 +205,14 @@ function ProductRow({
   return (
     <div className="bg-card border border-border rounded p-4 grid grid-cols-12 gap-3 items-start">
       <div className="col-span-2">
-        {(() => {
-          const cover =
-            (draft.product_images ?? [])
-              .slice()
-              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.url ??
-            draft.image_url ??
-            null;
-          return cover ? (
-            <SignedImg src={cover} alt="" className="w-full aspect-square object-cover rounded" />
-          ) : null;
-        })()}
+        <ProductThumbs
+          product={draft}
+          onUpdated={(images) => {
+            const next = { ...draft, product_images: images };
+            setDraft(next);
+            onSaved(next);
+          }}
+        />
         <p className="text-[10px] tracking-editorial text-muted-foreground mt-1">Look {draft.page_number}</p>
       </div>
       <div className="col-span-10 grid grid-cols-2 lg:grid-cols-4 gap-3">
