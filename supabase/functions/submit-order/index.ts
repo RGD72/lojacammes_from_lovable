@@ -51,17 +51,50 @@ Deno.serve(async (req) => {
   if (pErr || !profile?.active) return json(403, { error: "Cliente inativo" });
 
   let payload: { brand_id?: string; items?: InItem[] };
+  type Payload = { brand_id?: string; items?: InItem[]; idempotency_key?: string };
+  let parsed: Payload;
   try {
-    payload = await req.json();
+    parsed = await req.json();
   } catch {
     return json(400, { error: "JSON inválido" });
   }
 
-  const brand_id = payload.brand_id;
-  const items = payload.items;
+  const brand_id = parsed.brand_id;
+  const items = parsed.items;
+  const idempotency_key = parsed.idempotency_key;
   if (!brand_id || typeof brand_id !== "string") return json(400, { error: "brand_id ausente" });
   if (!Array.isArray(items) || items.length === 0) return json(400, { error: "Pedido vazio" });
   if (items.length > 500) return json(400, { error: "Pedido excede 500 itens" });
+  if (
+    !idempotency_key ||
+    typeof idempotency_key !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idempotency_key)
+  ) {
+    return json(400, { error: "idempotency_key inválida" });
+  }
+
+  // If this exact key was already submitted by this user, return the existing order.
+  {
+    const { data: existing } = await admin
+      .from("orders")
+      .select("id, created_at, total")
+      .eq("user_id", userId)
+      .eq("client_idempotency_key", idempotency_key)
+      .maybeSingle();
+    if (existing) {
+      const { data: rows } = await admin
+        .from("order_items")
+        .select("product_id, reference, description, color, size, quantity, unit_price")
+        .eq("order_id", existing.id);
+      return json(200, {
+        order_id: existing.id,
+        created_at: existing.created_at,
+        total: Number(existing.total),
+        items: rows ?? [],
+        deduplicated: true,
+      });
+    }
+  }
 
   // Validate item shape
   const cleaned: InItem[] = [];
@@ -124,10 +157,35 @@ Deno.serve(async (req) => {
       client_name: profile.name || profile.email || "Cliente",
       status: "new",
       total,
+      client_idempotency_key: idempotency_key,
     })
     .select()
     .single();
-  if (oErr || !order) return json(500, { error: oErr?.message ?? "Falha ao criar pedido" });
+  if (oErr || !order) {
+    // Lost the race against a concurrent retry with the same key — return that one.
+    if ((oErr as { code?: string } | null)?.code === "23505") {
+      const { data: existing } = await admin
+        .from("orders")
+        .select("id, created_at, total")
+        .eq("user_id", userId)
+        .eq("client_idempotency_key", idempotency_key)
+        .maybeSingle();
+      if (existing) {
+        const { data: rows } = await admin
+          .from("order_items")
+          .select("product_id, reference, description, color, size, quantity, unit_price")
+          .eq("order_id", existing.id);
+        return json(200, {
+          order_id: existing.id,
+          created_at: existing.created_at,
+          total: Number(existing.total),
+          items: rows ?? [],
+          deduplicated: true,
+        });
+      }
+    }
+    return json(500, { error: oErr?.message ?? "Falha ao criar pedido" });
+  }
 
   const { error: iErr } = await admin
     .from("order_items")
