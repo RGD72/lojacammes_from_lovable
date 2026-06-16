@@ -55,6 +55,196 @@ const TOOL = {
   },
 };
 
+const AI_MODEL = "google/gemini-2.5-flash";
+const AI_PROVIDER = "lovable-gateway";
+const AI_ENDPOINT = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const MAX_AI_ATTEMPTS = 3;
+const BACKOFF_MS = [500, 1500, 4000];
+
+interface AiUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+interface AiCallResult {
+  products: any[];
+  usage: AiUsage;
+  runId: string | null;
+  status: number;
+  attempts: number;
+  durationMs: number;
+}
+
+class AiCallError extends Error {
+  status: number;
+  attempts: number;
+  durationMs: number;
+  runId: string | null;
+  usage: AiUsage;
+  constructor(opts: {
+    message: string;
+    status: number;
+    attempts: number;
+    durationMs: number;
+    runId: string | null;
+    usage?: AiUsage;
+  }) {
+    super(opts.message);
+    this.status = opts.status;
+    this.attempts = opts.attempts;
+    this.durationMs = opts.durationMs;
+    this.runId = opts.runId;
+    this.usage = opts.usage ?? {};
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function parseRetryAfter(h: string | null): number | null {
+  if (!h) return null;
+  const s = Number(h);
+  if (Number.isFinite(s) && s >= 0) return Math.min(Math.floor(s * 1000), 15000);
+  return null;
+}
+
+/**
+ * Wraps the Lovable AI Gateway call. Encapsulates retry/backoff on 429 and 5xx,
+ * extracts usage metrics, captures the AIG run id and returns parsed products.
+ * Throws AiCallError on terminal failure (with status/attempts annotated).
+ */
+async function callAiExtractor(opts: {
+  aiKey: string;
+  pageNumber: number;
+  imageUrl: string;
+}): Promise<AiCallResult> {
+  const started = Date.now();
+  let lastStatus = 0;
+  let lastBody = "";
+  let runId: string | null = null;
+
+  for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt++) {
+    const resp = await fetch(AI_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${opts.aiKey}`,
+        "Content-Type": "application/json",
+        "X-Lovable-AIG-SDK": "native-fetch",
+      },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: `Extract all products visible on page ${opts.pageNumber}.` },
+              { type: "image_url", image_url: { url: opts.imageUrl } },
+            ],
+          },
+        ],
+        tools: [TOOL],
+        tool_choice: { type: "function", function: { name: "extract_products" } },
+      }),
+    });
+
+    lastStatus = resp.status;
+    runId = resp.headers.get("X-Lovable-AIG-Run-ID") ?? runId;
+
+    if (resp.ok) {
+      const aiJson = await resp.json();
+      const toolCall = aiJson.choices?.[0]?.message?.tool_calls?.[0];
+      let products: any[] = [];
+      if (toolCall?.function?.arguments) {
+        try {
+          products = JSON.parse(toolCall.function.arguments).products ?? [];
+        } catch (e) {
+          console.error("parse tool args failed", e);
+        }
+      }
+      const usage: AiUsage = aiJson.usage ?? {};
+      return {
+        products,
+        usage: {
+          prompt_tokens: usage.prompt_tokens,
+          completion_tokens: usage.completion_tokens,
+          total_tokens: usage.total_tokens,
+        },
+        runId,
+        status: resp.status,
+        attempts: attempt,
+        durationMs: Date.now() - started,
+      };
+    }
+
+    lastBody = await resp.text();
+    console.error("AI error", resp.status, lastBody.slice(0, 500));
+
+    // Retry only on 429 and 5xx.
+    const retriable = resp.status === 429 || resp.status >= 500;
+    if (!retriable || attempt === MAX_AI_ATTEMPTS) break;
+
+    const retryAfter = parseRetryAfter(resp.headers.get("Retry-After"));
+    const delay = retryAfter ?? BACKOFF_MS[attempt - 1] ?? 4000;
+    await sleep(delay);
+  }
+
+  const msg =
+    lastStatus === 429
+      ? "Limite de taxa do AI excedido — tente novamente em alguns minutos."
+      : lastStatus === 402
+        ? "Créditos do AI esgotados. Adicione créditos no workspace."
+        : lastStatus >= 500
+          ? "AI gateway instável; tente novamente."
+          : `AI gateway erro ${lastStatus}`;
+
+  throw new AiCallError({
+    message: msg,
+    status: lastStatus,
+    attempts: MAX_AI_ATTEMPTS,
+    durationMs: Date.now() - started,
+    runId,
+  });
+}
+
+async function logAiUsage(
+  admin: ReturnType<typeof createClient>,
+  row: {
+    function: string;
+    model: string;
+    brand_id: string | null;
+    page_number: number | null;
+    status: number | null;
+    attempts: number;
+    duration_ms: number;
+    usage: AiUsage;
+    error_message: string | null;
+    run_id: string | null;
+  },
+) {
+  try {
+    await admin.from("ai_usage_log").insert({
+      function: row.function,
+      provider: AI_PROVIDER,
+      model: row.model,
+      brand_id: row.brand_id,
+      page_number: row.page_number,
+      status: row.status,
+      attempts: row.attempts,
+      duration_ms: row.duration_ms,
+      prompt_tokens: row.usage.prompt_tokens ?? null,
+      completion_tokens: row.usage.completion_tokens ?? null,
+      total_tokens: row.usage.total_tokens ?? null,
+      error_message: row.error_message,
+      run_id: row.run_id,
+    });
+  } catch (e) {
+    console.error("ai_usage_log insert failed", e);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -150,55 +340,48 @@ Deno.serve(async (req) => {
     }
 
     // Call Lovable AI gateway with vision + tool calling
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${aiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: `Extract all products visible on page ${page_number}.` },
-              { type: "image_url", image_url: { url: aiImageUrl } },
-            ],
-          },
-        ],
-        tools: [TOOL],
-        tool_choice: { type: "function", function: { name: "extract_products" } },
-      }),
-    });
-
-    if (!aiResp.ok) {
-      const t = await aiResp.text();
-      console.error("AI error", aiResp.status, t);
-      const errMsg =
-        aiResp.status === 429
-          ? "AI rate limit exceeded, try again later."
-          : aiResp.status === 402
-            ? "AI credits exhausted. Add funds to your workspace."
-            : "AI gateway error";
+    let products: any[] = [];
+    try {
+      const result = await callAiExtractor({
+        aiKey,
+        pageNumber: page_number,
+        imageUrl: aiImageUrl,
+      });
+      products = result.products;
+      // Best-effort usage tracking on success.
+      await logAiUsage(admin, {
+        function: "process-catalog-page",
+        model: AI_MODEL,
+        brand_id,
+        page_number,
+        status: result.status,
+        attempts: result.attempts,
+        duration_ms: result.durationMs,
+        usage: result.usage,
+        error_message: null,
+        run_id: result.runId,
+      });
+    } catch (err) {
+      const e = err as AiCallError;
+      await logAiUsage(admin, {
+        function: "process-catalog-page",
+        model: AI_MODEL,
+        brand_id,
+        page_number,
+        status: e.status ?? null,
+        attempts: e.attempts ?? 1,
+        duration_ms: e.durationMs ?? 0,
+        usage: e.usage ?? {},
+        error_message: e.message,
+        run_id: e.runId ?? null,
+      });
       await admin
         .from("catalog_page_jobs")
-        .update({ status: "error", error_message: errMsg })
+        .update({ status: "error", error_message: e.message })
         .eq("brand_id", brand_id)
         .eq("page_number", page_number);
-      return json({ error: errMsg }, aiResp.status === 429 ? 429 : aiResp.status === 402 ? 402 : 500);
-    }
-
-    const aiJson = await aiResp.json();
-    const toolCall = aiJson.choices?.[0]?.message?.tool_calls?.[0];
-    let products: any[] = [];
-    if (toolCall?.function?.arguments) {
-      try {
-        products = JSON.parse(toolCall.function.arguments).products ?? [];
-      } catch (e) {
-        console.error("parse tool args failed", e);
-      }
+      const httpStatus = e.status === 429 ? 429 : e.status === 402 ? 402 : 500;
+      return json({ error: e.message }, httpStatus);
     }
 
     const lookId = `look-${page_number}`;
