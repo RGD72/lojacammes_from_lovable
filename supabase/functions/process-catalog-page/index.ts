@@ -58,12 +58,15 @@ const TOOL = {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let jobBrandId: string | null = null;
+  let jobPageNumber: number | null = null;
+  const url = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return json({ error: "Missing auth" }, 401);
 
-    const url = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const aiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!aiKey) return json({ error: "LOVABLE_API_KEY not configured" }, 500);
@@ -86,6 +89,8 @@ Deno.serve(async (req) => {
     if (!brand_id || !page_number || !page_url) {
       return json({ error: "brand_id, page_number, page_url required" }, 400);
     }
+    jobBrandId = brand_id;
+    jobPageNumber = page_number;
     const pageUrl: string = page_url;
 
     // Mark the page job as pending (idempotent) and bump attempts.
@@ -101,7 +106,6 @@ Deno.serve(async (req) => {
         { onConflict: "brand_id,page_number" },
       );
     // Increment attempts in a separate update so upsert doesn't reset it.
-    await admin.rpc; // no-op to keep TS happy
     {
       const { data: jobRow } = await admin
         .from("catalog_page_jobs")
@@ -296,12 +300,7 @@ Deno.serve(async (req) => {
     console.error("process-catalog-page error:", e);
     // Best-effort: mark the job as errored so the client can resume it later.
     try {
-      const body = await req.clone().json().catch(() => null);
-      const bid = body?.brand_id;
-      const pn = body?.page_number;
-      if (bid && pn) {
-        const url = Deno.env.get("SUPABASE_URL")!;
-        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      if (jobBrandId && jobPageNumber) {
         const admin2 = createClient(url, serviceKey, { auth: { persistSession: false } });
         await admin2
           .from("catalog_page_jobs")
@@ -309,8 +308,8 @@ Deno.serve(async (req) => {
             status: "error",
             error_message: e instanceof Error ? e.message : "Unknown error",
           })
-          .eq("brand_id", bid)
-          .eq("page_number", pn);
+          .eq("brand_id", jobBrandId)
+          .eq("page_number", jobPageNumber);
       }
     } catch (_) { /* ignore */ }
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
