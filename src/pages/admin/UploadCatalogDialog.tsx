@@ -148,15 +148,14 @@ export function UploadCatalogDialog({
       if (cancelRef.current) throw new Error("__cancelled__");
       await supabase.from("brands").update({ total_pages: totalPages }).eq("id", brand.id);
 
-      // In resume mode, skip pages that already have products in DB.
-      let alreadyDone = new Set<number>();
-      if (isResume) {
-        const { data: existing } = await supabase
-          .from("products")
-          .select("page_number")
-          .eq("brand_id", brand.id);
-        alreadyDone = new Set((existing ?? []).map((r) => r.page_number));
-      }
+      // Skip pages already marked done in catalog_page_jobs. This is the source
+      // of truth for resume — works even for pages that produced zero products.
+      const { data: doneJobs } = await supabase
+        .from("catalog_page_jobs")
+        .select("page_number")
+        .eq("brand_id", brand.id)
+        .eq("status", "done");
+      const alreadyDone = new Set((doneJobs ?? []).map((r) => r.page_number));
 
       // Process pages sequentially to respect rate limits
       const pageResults: { page: number; products: number; error?: string }[] = [];
