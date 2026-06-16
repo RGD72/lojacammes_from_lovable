@@ -32,6 +32,68 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_usage_log: {
+        Row: {
+          attempts: number
+          brand_id: string | null
+          completion_tokens: number | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          function: string
+          id: string
+          model: string
+          page_number: number | null
+          prompt_tokens: number | null
+          provider: string
+          run_id: string | null
+          status: number | null
+          total_tokens: number | null
+        }
+        Insert: {
+          attempts?: number
+          brand_id?: string | null
+          completion_tokens?: number | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          function: string
+          id?: string
+          model: string
+          page_number?: number | null
+          prompt_tokens?: number | null
+          provider?: string
+          run_id?: string | null
+          status?: number | null
+          total_tokens?: number | null
+        }
+        Update: {
+          attempts?: number
+          brand_id?: string | null
+          completion_tokens?: number | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          function?: string
+          id?: string
+          model?: string
+          page_number?: number | null
+          prompt_tokens?: number | null
+          provider?: string
+          run_id?: string | null
+          status?: number | null
+          total_tokens?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_log_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brands: {
         Row: {
           catalog_pdf_url: string | null

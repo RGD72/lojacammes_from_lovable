@@ -1,62 +1,62 @@
-## #7 — Normalizar imagens dos produtos
+## #8 — Backoff, abstração mínima e rastreio de custo do AI Gateway
 
-### Problema
-Hoje, em `public.products` convivem três campos para representar imagens do mesmo produto:
+### Contexto
+Hoje `process-catalog-page` chama `https://ai.gateway.lovable.dev/v1/chat/completions` direto, sem retry inteligente (apenas o retry de página no cliente) e sem registrar custo/uso. Isso significa:
 
-- `image_url text` — a "primeira" imagem (legado).
-- `image_urls text[]` — todas as URLs, na ordem inserida.
-- `image_bboxes jsonb[]` — bboxes paralelas, **uma por índice** de `image_urls`.
+- **429 transitório derruba a página** — o retry do cliente ajuda, mas estoura o orçamento de tentativas rapidamente em picos.
+- **Zero observabilidade de custo:** não dá para saber quantos tokens/calls cada marca consumiu, nem identificar páginas caras ou regressões do prompt.
+- **Lock-in implícito no Gateway:** a chamada está espalhada inline em meio à edge function — trocar provedor exige reescrita.
 
-Manter dois arrays paralelos é frágil:
-- Qualquer escrita que mude um sem o outro corrompe o alinhamento.
-- Não há como ordenar, marcar uma como "principal", remover uma específica nem armazenar metadados (página de origem, dimensão usada, hash) sem mais arrays paralelos.
-- `image_url` é redundante e força a UI a fazer fallback em cada renderizador.
+A abstração "interface de provedor completa" é overkill para o que existe (uma única call de vision + tool). Vamos pelo enxuto.
 
-### Mudança
-Substituir os três campos por uma tabela filha normalizada:
+### Mudanças
 
+**1. Nova tabela `ai_usage_log`**
 ```text
-product_images
-  id uuid pk
-  product_id uuid fk -> products(id) on delete cascade
-  url text not null
-  bbox jsonb           -- [x, y, w, h] em frações 0..1, opcional
-  page_number int      -- página do catálogo de onde veio
-  position int         -- ordem (0 = principal)
-  created_at timestamptz
-  UNIQUE (product_id, url)
+id uuid pk
+created_at timestamptz
+function text                -- 'process-catalog-page'
+provider text                -- 'lovable-gateway'
+model text                   -- 'google/gemini-2.5-flash'
+brand_id uuid                -- nullable
+page_number int              -- nullable
+status int                   -- HTTP status final
+attempts int                 -- quantas tentativas até sucesso/falha
+duration_ms int
+prompt_tokens int
+completion_tokens int
+total_tokens int
+error_message text
+run_id text                  -- X-Lovable-AIG-Run-ID (para correlacionar nos logs do Gateway)
 ```
+RLS: só admin lê; service_role escreve. Sem `anon`/`authenticated` insert.
 
-RLS: mesma regra de leitura de `products` (admin total; cliente ativo lê quando a marca dona está `published`). Sem INSERT/UPDATE para `authenticated` — só admin e edge functions (service role).
+**2. Helper `callAiExtractor` (inline em `process-catalog-page`)**
+Encapsula a chamada ao Gateway num único ponto. Implementa:
+- Backoff exponencial em 429 e 5xx: tentativas com delays `500ms, 1500ms, 4000ms` (máx 3 tentativas totais).
+- Honra `Retry-After` (segundos) quando o Gateway mandar.
+- Não tenta de novo em 4xx que não seja 429 (400/401/402/403): retorna o erro imediatamente.
+- Captura `usage.prompt_tokens`, `usage.completion_tokens`, `usage.total_tokens` da resposta.
+- Captura `X-Lovable-AIG-Run-ID` e `X-Lovable-AIG-Log-ID` dos headers para correlação.
+- Adiciona header `X-Lovable-AIG-SDK: native-fetch` para telemetria.
 
-### O que muda no código
+Retorna `{ products, usage, runId, status, attempts, durationMs }` ou lança erro com `status` anotado.
 
-1. **Migration**
-   - Cria `product_images` + GRANTs + RLS + policies.
-   - Backfill: para cada `products.id`, gera linhas a partir de `image_urls`/`image_bboxes` (zip por índice). Se `image_urls` estiver vazio mas `image_url` não, gera uma linha única.
-   - Mantém os campos antigos por enquanto (`image_url`, `image_urls`, `image_bboxes`) para não quebrar nada em runtime — derruba numa migration seguinte (#7b) quando todos os readers estiverem migrados.
+**3. Persistir o uso**
+Ao fim de cada call (sucesso ou erro), `INSERT` em `ai_usage_log` com os campos acima. Best-effort — falha no insert não derruba o processamento.
 
-2. **`process-catalog-page` (edge function)**
-   - Em vez do read-modify-write dos arrays, faz `INSERT ... ON CONFLICT (product_id, url) DO NOTHING` em `product_images` com `bbox`, `page_number`, `position`.
-   - Para produto novo: cria o produto e insere a primeira `product_images` (`position = 0`).
-   - Para repetição da mesma `reference`: insere mais uma `product_images` (próxima `position`).
-   - Para de gravar `image_url`/`image_urls`/`image_bboxes`.
+**4. Mensagens de erro mais precisas**
+Mapear status do Gateway:
+- 429 (após retries) → "Limite de taxa do AI excedido — tente novamente em alguns minutos."
+- 402 → "Créditos do AI esgotados."
+- 5xx (após retries) → "AI gateway instável; tente novamente."
 
-3. **Readers** (`ProductDialog`, `BrandShowcase`, `AdminBrandEdit`, `CartDrawer`, `orderPdf`, `UploadCatalogDialog`)
-   - Passam a buscar `product_images(url, bbox, position)` (join/embed do PostgREST: `select("*, product_images(url, bbox, position)")`).
-   - "Imagem principal" = `product_images` com menor `position` (fallback: primeira).
-   - Removem todos os fallbacks `image_url ?? image_urls[0]`.
-   - `UploadCatalogDialog` (modo "retomar") deixa de olhar `products.image_url` e usa a nova tabela `catalog_page_jobs` (já existente, do #3) como fonte de páginas pendentes — esse loop já foi migrado parcialmente; aqui só removemos o último vestígio.
-
-4. **`order_items`**
-   - Hoje grava `image_url` (snapshot). Mantemos a coluna (snapshot histórico do pedido); muda só a forma como é obtida no submit-order: `select position=0 from product_images where product_id=?`.
-
-### Fora de escopo
-- Derrubar `products.image_url` / `image_urls` / `image_bboxes` — fica para uma migration de cleanup (#7b) depois que os readers estiverem em produção e validados.
-- Editor de bbox no admin (#9).
-- Reordenação manual de imagens (UI).
+### Não-objetivos
+- Abstração completa de provedor (OpenAI/Anthropic/etc.).
+- Adoção do Vercel AI SDK — a chamada atual é tool-calling com `image_url`, segue funcionando com `fetch` puro. Migração para o SDK fica como item separado se quisermos streaming/embeddings.
+- UI de custos no admin (planilha viva). Por agora, o admin consulta `ai_usage_log` via SQL/Supabase.
 
 ### Resultado
-- Modelo relacional sem arrays paralelos, sem campo redundante.
-- Reprocessar uma página vira `INSERT ... ON CONFLICT DO NOTHING` (idempotente).
-- Cada imagem ganha bbox/página/ordem próprios sem risco de desalinhamento.
+- Resiliente a 429/5xx transitórios sem cascata de retries do cliente.
+- Cada chamada deixa rastro de custo correlacionável com `run_id` dos logs do Gateway.
+- Trocar provedor amanhã = reescrever só o helper.
