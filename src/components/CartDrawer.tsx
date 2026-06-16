@@ -15,7 +15,7 @@ interface Brand { id: string; name: string; }
 export function CartDrawer({
   open, onOpenChange, brand,
 }: { open: boolean; onOpenChange: (v: boolean) => void; brand: Brand }) {
-  const { carts, updateQty, removeItem, totalFor, clearBrand } = useCart();
+  const { carts, updateQty, removeItem, totalFor, clearBrand, idempotencyKeyFor, rotateIdempotencyKey } = useCart();
   const { user, profileName } = useAuth();
   const items = carts[brand.id] ?? [];
   const total = totalFor(brand.id);
@@ -32,6 +32,7 @@ export function CartDrawer({
       const { data, error } = await supabase.functions.invoke("submit-order", {
         body: {
           brand_id: brand.id,
+          idempotency_key: idempotencyKeyFor(brand.id),
           items: items.map((i) => ({
             product_id: i.product_id,
             color: i.color,
@@ -60,6 +61,7 @@ export function CartDrawer({
         total: Number(data.total),
       });
       clearBrand(brand.id);
+      rotateIdempotencyKey(brand.id);
       toast.success("Pedido enviado");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao enviar");
