@@ -450,6 +450,7 @@ Deno.serve(async (req) => {
               bbox: productBbox,
               page_number,
               position: existingCount ?? 0,
+              page_image_path: pathForSign,
             },
             { onConflict: "product_id,url", ignoreDuplicates: true },
           );
@@ -475,6 +476,7 @@ Deno.serve(async (req) => {
           bbox: productBbox,
           page_number,
           position: 0,
+          page_image_path: pathForSign,
         });
         if (imgErr) throw imgErr;
         inserted++;

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Trash2, ArrowLeft, Save, LogOut } from "lucide-react";
 import { SignedImg } from "@/lib/storage";
+import { BboxEditor } from "@/components/admin/BboxEditor";
 
 interface Product {
   id: string;
@@ -18,7 +19,13 @@ interface Product {
   sizes: string[];
   price: number;
   image_url: string | null;
-  product_images?: { url: string; position: number }[] | null;
+  product_images?: {
+    id: string;
+    url: string;
+    position: number;
+    bbox: number[] | null;
+    page_image_path: string | null;
+  }[] | null;
 }
 
 export default function AdminBrandEdit() {
@@ -35,7 +42,7 @@ export default function AdminBrandEdit() {
       supabase.from("brands").select("name, commission_pct").eq("id", id).maybeSingle(),
       supabase
         .from("products")
-        .select("*, product_images(url, position)")
+        .select("*, product_images(id, url, position, bbox, page_image_path)")
         .eq("brand_id", id)
         .order("sort_order"),
     ]);
@@ -114,6 +121,97 @@ export default function AdminBrandEdit() {
         )}
       </div>
     </div>
+  );
+}
+
+type PI = NonNullable<Product["product_images"]>[number];
+
+function isSuspect(bbox: number[] | null | undefined): boolean {
+  if (!Array.isArray(bbox) || bbox.length !== 4) return true;
+  const [x, y, w, h] = bbox;
+  if (![x, y, w, h].every((n) => Number.isFinite(n) && n >= 0 && n <= 1)) return true;
+  if (w * h < 0.05) return true;
+  if (x === 0 && y === 0 && w === 1 && h === 1) return true;
+  return false;
+}
+
+function ProductThumbs({
+  product,
+  onUpdated,
+}: {
+  product: Product;
+  onUpdated: (images: PI[]) => void;
+}) {
+  const images = (product.product_images ?? [])
+    .slice()
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const [editing, setEditing] = useState<PI | null>(null);
+
+  if (images.length === 0) {
+    return product.image_url ? (
+      <SignedImg src={product.image_url} alt="" className="w-full aspect-square object-cover rounded" />
+    ) : (
+      <div className="w-full aspect-square bg-secondary rounded" />
+    );
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-1">
+        {images.map((img) => {
+          const suspect = isSuspect(img.bbox);
+          return (
+            <div key={img.id} className="relative group">
+              <SignedImg
+                src={img.url}
+                alt=""
+                className="w-full aspect-square object-cover rounded"
+              />
+              {suspect && (
+                <span className="absolute top-0.5 left-0.5 text-[9px] bg-destructive text-destructive-foreground px-1 rounded">
+                  ⚠ recorte
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setEditing(img)}
+                disabled={!img.page_image_path}
+                title={img.page_image_path ? "Ajustar recorte" : "Sem página de origem"}
+                className="absolute inset-0 bg-background/0 hover:bg-background/60 text-[10px] tracking-editorial uppercase opacity-0 hover:opacity-100 transition disabled:cursor-not-allowed"
+              >
+                Ajustar
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {editing && editing.page_image_path && (
+        <BboxEditor
+          open={!!editing}
+          onClose={() => setEditing(null)}
+          productImageId={editing.id}
+          pagePath={editing.page_image_path}
+          initialBbox={
+            (Array.isArray(editing.bbox) && editing.bbox.length === 4
+              ? (editing.bbox as [number, number, number, number])
+              : [0, 0, 1, 1]) as [number, number, number, number]
+          }
+          siblings={images
+            .filter((s) => s.id !== editing.id && Array.isArray(s.bbox) && s.bbox.length === 4)
+            .map((s) => ({
+              id: s.id,
+              bbox: s.bbox as [number, number, number, number],
+            }))}
+          onSaved={(nb) => {
+            const next = images.map((i) =>
+              i.id === editing.id ? { ...i, bbox: nb as number[] } : i,
+            );
+            onUpdated(next);
+            setEditing(null);
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -198,17 +296,14 @@ function ProductRow({
   return (
     <div className="bg-card border border-border rounded p-4 grid grid-cols-12 gap-3 items-start">
       <div className="col-span-2">
-        {(() => {
-          const cover =
-            (draft.product_images ?? [])
-              .slice()
-              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.url ??
-            draft.image_url ??
-            null;
-          return cover ? (
-            <SignedImg src={cover} alt="" className="w-full aspect-square object-cover rounded" />
-          ) : null;
-        })()}
+        <ProductThumbs
+          product={draft}
+          onUpdated={(images) => {
+            const next = { ...draft, product_images: images };
+            setDraft(next);
+            onSaved(next);
+          }}
+        />
         <p className="text-[10px] tracking-editorial text-muted-foreground mt-1">Look {draft.page_number}</p>
       </div>
       <div className="col-span-10 grid grid-cols-2 lg:grid-cols-4 gap-3">
