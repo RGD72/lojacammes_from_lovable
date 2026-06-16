@@ -5,6 +5,36 @@ import { useCart, money } from "@/lib/cart";
 import { toast } from "sonner";
 import { useSignedUrl } from "@/lib/storage";
 
+function resolveImages(product: {
+  image_url?: string | null;
+  image_urls?: string[] | null;
+  image_bboxes?: number[][] | null;
+  product_images?: { url: string; bbox: number[] | null; position: number }[] | null;
+}): { imgs: string[]; boxes: number[][] } {
+  const fromTable = (product.product_images ?? [])
+    .slice()
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  if (fromTable.length > 0) {
+    return {
+      imgs: fromTable.map((r) => r.url),
+      boxes: fromTable.map((r) =>
+        Array.isArray(r.bbox) && r.bbox.length === 4 ? r.bbox : [0, 0, 1, 1],
+      ),
+    };
+  }
+  const imgs =
+    product.image_urls && product.image_urls.length > 0
+      ? product.image_urls
+      : product.image_url
+        ? [product.image_url]
+        : [];
+  const boxes =
+    product.image_bboxes && product.image_bboxes.length === imgs.length
+      ? product.image_bboxes
+      : imgs.map(() => [0, 0, 1, 1] as number[]);
+  return { imgs, boxes };
+}
+
 interface Product {
   id: string; brand_id: string; reference: string; description: string;
   material: string; colors: string[]; sizes: string[]; price: number; image_url: string | null;
