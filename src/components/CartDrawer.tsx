@@ -29,36 +29,36 @@ export function CartDrawer({
     if (items.length === 0) return toast.error("Pedido vazio");
     setBusy(true);
     try {
-      const { data: order, error } = await supabase
-        .from("orders")
-        .insert({
+      const { data, error } = await supabase.functions.invoke("submit-order", {
+        body: {
           brand_id: brand.id,
-          user_id: user.id,
-          client_name: profileName || user.email || "Cliente",
-          status: "new",
-          total,
-        })
-        .select()
-        .single();
-      if (error || !order) throw error ?? new Error("Falha ao criar pedido");
+          items: items.map((i) => ({
+            product_id: i.product_id,
+            color: i.color,
+            size: i.size,
+            quantity: i.quantity,
+          })),
+        },
+      });
+      if (error) throw error;
+      if (!data?.order_id) throw new Error(data?.error ?? "Falha ao criar pedido");
 
-      const rows = items.map((i) => ({
-        order_id: order.id,
-        product_id: i.product_id,
-        reference: i.reference,
-        description: i.description,
-        color: i.color,
-        size: i.size,
-        quantity: i.quantity,
-        unit_price: i.unit_price,
-      }));
-      const { error: iErr } = await supabase.from("order_items").insert(rows);
-      if (iErr) throw iErr;
+      // Merge server-recalculated prices back into local items for the receipt PDF
+      const serverRows: Array<{ product_id: string; color: string; size: string; unit_price: number }> =
+        data.items ?? [];
+      const priced = items.map((i) => {
+        const match = serverRows.find(
+          (r) => r.product_id === i.product_id && r.color === (i.color ?? "") && r.size === (i.size ?? ""),
+        );
+        return match ? { ...i, unit_price: Number(match.unit_price) } : i;
+      });
 
-      // Notify admin (best-effort)
-      supabase.functions.invoke("notify-new-order", { body: { order_id: order.id } }).catch(() => {});
-
-      setConfirmation({ id: order.id, createdAt: order.created_at, items: [...items], total });
+      setConfirmation({
+        id: data.order_id,
+        createdAt: data.created_at,
+        items: priced,
+        total: Number(data.total),
+      });
       clearBrand(brand.id);
       toast.success("Pedido enviado");
     } catch (e) {
