@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ImgHTMLAttributes } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const TTL_SECONDS = 60 * 60; // 1h
@@ -80,4 +80,20 @@ export function useSignedUrls(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, bucketHint]);
   return urls;
+}
+
+/**
+ * Drop-in <img> that signs a private-bucket URL before rendering.
+ */
+export function SignedImg({
+  src,
+  bucketHint,
+  ...rest
+}: ImgHTMLAttributes<HTMLImageElement> & {
+  src: string | null | undefined;
+  bucketHint?: string;
+}) {
+  const signed = useSignedUrl(src ?? null, bucketHint);
+  if (!signed) return null;
+  return <img src={signed} {...rest} />;
 }
