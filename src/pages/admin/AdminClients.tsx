@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, KeyRound, Trash2 } from "lucide-react";
+import { Plus, KeyRound, Trash2, Tags } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Client { id: string; email: string; name: string; phone: string; active: boolean; created_at: string; }
 
@@ -22,6 +23,9 @@ export default function AdminClients() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [pwUserId, setPwUserId] = useState<string | null>(null);
+  const [brandsUserId, setBrandsUserId] = useState<string | null>(null);
+  const [brandCounts, setBrandCounts] = useState<Record<string, number>>({});
+  const [totalBrands, setTotalBrands] = useState(0);
 
   const load = async () => {
     // List only client role
@@ -30,6 +34,14 @@ export default function AdminClients() {
     if (clientIds.length === 0) { setList([]); setLoading(false); return; }
     const { data } = await supabase.from("profiles").select("*").in("id", clientIds).order("created_at", { ascending: false });
     setList((data ?? []) as Client[]);
+    const [{ count: tb }, { data: grants }] = await Promise.all([
+      supabase.from("brands").select("id", { count: "exact", head: true }),
+      supabase.from("client_brand_access").select("user_id, brand_id").in("user_id", clientIds),
+    ]);
+    setTotalBrands(tb ?? 0);
+    const counts: Record<string, number> = {};
+    (grants ?? []).forEach((g) => { counts[g.user_id] = (counts[g.user_id] ?? 0) + 1; });
+    setBrandCounts(counts);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -75,6 +87,7 @@ export default function AdminClients() {
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Telefone</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Cadastro</th>
                 <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Ativo</th>
+                <th className="px-4 py-3 tracking-editorial text-[10px] text-muted-foreground">Marcas</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -86,7 +99,16 @@ export default function AdminClients() {
                   <td className="px-4 py-3 text-muted-foreground">{c.phone || "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{new Date(c.created_at).toLocaleDateString("pt-BR")}</td>
                   <td className="px-4 py-3"><Switch checked={c.active} onCheckedChange={(v) => toggleActive(c, v)} /></td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    <button
+                      className="underline-offset-2 hover:underline tracking-editorial text-xs"
+                      onClick={() => setBrandsUserId(c.id)}
+                    >
+                      {(brandCounts[c.id] ?? 0)}/{totalBrands}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-right">
+                    <Button size="sm" variant="ghost" onClick={() => setBrandsUserId(c.id)} title="Marcas"><Tags className="h-4 w-4" /></Button>
                     <Button size="sm" variant="ghost" onClick={() => setPwUserId(c.id)}><KeyRound className="h-4 w-4" /></Button>
                     <Button size="sm" variant="ghost" onClick={() => remove(c)}><Trash2 className="h-4 w-4" /></Button>
                   </td>
@@ -99,6 +121,7 @@ export default function AdminClients() {
 
       <NewClientDialog open={open} onOpenChange={setOpen} onCreated={load} />
       <PasswordDialog userId={pwUserId} onClose={() => setPwUserId(null)} />
+      <BrandAccessDialog userId={brandsUserId} onClose={() => { setBrandsUserId(null); load(); }} />
     </div>
   );
 }
@@ -179,6 +202,71 @@ function PasswordDialog({ userId, onClose }: { userId: string | null; onClose: (
           <Input type="text" value={pw} onChange={(e) => setPw(e.target.value)} required minLength={6} placeholder="nova senha" />
           <Button type="submit" className="w-full" disabled={busy}>{busy ? "Salvando…" : "Salvar"}</Button>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface Brand { id: string; name: string; status: string }
+
+function BrandAccessDialog({ userId, onClose }: { userId: string | null; onClose: () => void }) {
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [granted, setGranted] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    setLoading(true);
+    (async () => {
+      const [{ data: bs }, { data: gs }] = await Promise.all([
+        supabase.from("brands").select("id, name, status").order("name"),
+        supabase.from("client_brand_access").select("brand_id").eq("user_id", userId),
+      ]);
+      setBrands((bs ?? []) as Brand[]);
+      setGranted(new Set((gs ?? []).map((g) => g.brand_id)));
+      setLoading(false);
+    })();
+  }, [userId]);
+
+  const toggle = async (brandId: string, checked: boolean) => {
+    if (!userId) return;
+    setSavingId(brandId);
+    if (checked) {
+      const { error } = await supabase.from("client_brand_access").insert({ user_id: userId, brand_id: brandId });
+      if (error) toast.error(error.message);
+      else setGranted((s) => new Set(s).add(brandId));
+    } else {
+      const { error } = await supabase.from("client_brand_access").delete().eq("user_id", userId).eq("brand_id", brandId);
+      if (error) toast.error(error.message);
+      else setGranted((s) => { const n = new Set(s); n.delete(brandId); return n; });
+    }
+    setSavingId(null);
+  };
+
+  return (
+    <Dialog open={!!userId} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle className="font-display text-2xl">Acesso a marcas</DialogTitle></DialogHeader>
+        {loading ? (
+          <p className="text-muted-foreground text-sm">carregando…</p>
+        ) : brands.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Nenhuma marca cadastrada.</p>
+        ) : (
+          <div className="max-h-[60vh] overflow-y-auto -mx-6 px-6 divide-y divide-border">
+            {brands.map((b) => (
+              <label key={b.id} className="flex items-center gap-3 py-3 cursor-pointer">
+                <Checkbox
+                  checked={granted.has(b.id)}
+                  disabled={savingId === b.id}
+                  onCheckedChange={(v) => toggle(b.id, !!v)}
+                />
+                <span className="flex-1">{b.name}</span>
+                <span className="text-[10px] tracking-editorial text-muted-foreground uppercase">{b.status}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
