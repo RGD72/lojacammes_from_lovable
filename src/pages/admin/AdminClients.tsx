@@ -206,3 +206,68 @@ function PasswordDialog({ userId, onClose }: { userId: string | null; onClose: (
     </Dialog>
   );
 }
+
+interface Brand { id: string; name: string; status: string }
+
+function BrandAccessDialog({ userId, onClose }: { userId: string | null; onClose: () => void }) {
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [granted, setGranted] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    setLoading(true);
+    (async () => {
+      const [{ data: bs }, { data: gs }] = await Promise.all([
+        supabase.from("brands").select("id, name, status").order("name"),
+        supabase.from("client_brand_access").select("brand_id").eq("user_id", userId),
+      ]);
+      setBrands((bs ?? []) as Brand[]);
+      setGranted(new Set((gs ?? []).map((g) => g.brand_id)));
+      setLoading(false);
+    })();
+  }, [userId]);
+
+  const toggle = async (brandId: string, checked: boolean) => {
+    if (!userId) return;
+    setSavingId(brandId);
+    if (checked) {
+      const { error } = await supabase.from("client_brand_access").insert({ user_id: userId, brand_id: brandId });
+      if (error) toast.error(error.message);
+      else setGranted((s) => new Set(s).add(brandId));
+    } else {
+      const { error } = await supabase.from("client_brand_access").delete().eq("user_id", userId).eq("brand_id", brandId);
+      if (error) toast.error(error.message);
+      else setGranted((s) => { const n = new Set(s); n.delete(brandId); return n; });
+    }
+    setSavingId(null);
+  };
+
+  return (
+    <Dialog open={!!userId} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle className="font-display text-2xl">Acesso a marcas</DialogTitle></DialogHeader>
+        {loading ? (
+          <p className="text-muted-foreground text-sm">carregando…</p>
+        ) : brands.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Nenhuma marca cadastrada.</p>
+        ) : (
+          <div className="max-h-[60vh] overflow-y-auto -mx-6 px-6 divide-y divide-border">
+            {brands.map((b) => (
+              <label key={b.id} className="flex items-center gap-3 py-3 cursor-pointer">
+                <Checkbox
+                  checked={granted.has(b.id)}
+                  disabled={savingId === b.id}
+                  onCheckedChange={(v) => toggle(b.id, !!v)}
+                />
+                <span className="flex-1">{b.name}</span>
+                <span className="text-[10px] tracking-editorial text-muted-foreground uppercase">{b.status}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
