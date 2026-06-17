@@ -1,43 +1,54 @@
-## #9 — Editor de bbox no admin (revisão de recortes do AI)
+# #10 — Acesso por marca (whitelist por cliente)
 
-### Contexto
-O `process-catalog-page` pede ao Gemini um `bbox: [x,y,w,h]` normalizado por imagem e usa esse recorte na vitrine (via `BboxImage` em `ProductDialog.tsx` / `BrandShowcase.tsx`). Quando o AI erra (corta cabeça, inclui produto vizinho, bbox quase 0×0), hoje **não há como corrigir** sem editar JSON cru no banco. `AdminBrandEdit.tsx` mostra a thumb mas não permite ajustar o enquadramento.
+## Contexto
+Hoje qualquer cliente com `profiles.active=true` enxerga **todas** as marcas publicadas (políticas em `brands`, `products`, `product_images` e no bucket `storage.objects`). Não há como dar acesso parcial — "cliente X só vê marca A e B".
 
-### Mudanças
+## Modelo
+Nova tabela `client_brand_access`:
 
-**1. Persistência da página renderizada**
-Já temos `catalog-pages/brand_<id>/page_<n>.jpg` no Storage (bucket privado). Vamos:
-- Adicionar `page_image_path text` em `product_images` (nullable, populado no insert via `process-catalog-page`) para sabermos qual JPG da página gerou cada recorte.
-- Backfill: para registros existentes, derivar do `(brand_id, page_number)` do produto pai.
+| coluna       | tipo  |
+|--------------|-------|
+| `user_id`    | uuid → auth.users |
+| `brand_id`   | uuid → brands |
+| `created_at` | timestamptz |
+| `created_by` | uuid (admin) |
 
-**2. UI: `BboxEditor` (novo componente)**
-Modal acionado por um botão "Ajustar recorte" em cada thumb de produto em `AdminBrandEdit.tsx`. Mostra:
-- Imagem da página inteira (signed URL do `page_image_path`), com overlay de um retângulo arrastável/redimensionável representando o bbox normalizado.
-- Mostra TODOS os bboxes dos outros produtos da mesma página em cinza (read-only) para evitar sobreposição acidental.
-- Controles: arrastar para mover, alças nos 4 cantos para redimensionar, snap suave a 1% da página.
-- Preview ao vivo do crop (mesma transform do `BboxImage`).
-- Botões: **Salvar**, **Resetar para AI**, **Cancelar**.
+PK composta `(user_id, brand_id)`. RLS:
+- admin: tudo (via `has_role`)
+- cliente: pode ler **as próprias linhas** (`user_id = auth.uid()`), nunca escrever
 
-**3. Persistência**
-- Salvar emite `UPDATE product_images SET bbox = $1 WHERE id = $2`.
-- Como `product_images` já tem RLS admin-full-access, basta o client chamar PostgREST direto. Sem edge function nova.
-- Valida 0 ≤ x,y,w,h ≤ 1, w*h ≥ 0.01, x+w ≤ 1, y+h ≤ 1.
+Função `public.has_brand_access(_user_id uuid, _brand_id uuid) returns boolean` (security definer, stable):
+- retorna `true` se admin **ou** existir linha `(user_id, brand_id)` em `client_brand_access`
 
-**4. Indicador de bbox suspeito**
-Em `AdminBrandEdit.tsx`, badge "⚠ recorte" ao lado de produtos cujo bbox tenha área < 5% ou que estejam em `[0,0,1,1]` (default não-extraído). Ajuda admin a focar nos casos ruins primeiro.
+## Policies atualizadas
+Substituir `using (...is_active_client...)` por `using (... is_active_client AND has_brand_access(auth.uid(), brand_id) ...)` em:
+- `brands_clients_read_published`
+- `products_clients_read`
+- `product_images_clients_read`
+- `catalogs_clients_read_published` (em `storage.objects`) — extrair `brand_id` do path via `split_part(name,'/',1)::uuid` (mesmo padrão já em uso) e checar acesso
 
-### Não-objetivos
-- Re-rodar AI ou mexer no prompt — só correção manual.
-- Edição de qual imagem é capa (drag-reorder) — segue como item separado.
-- Recorte server-side físico (gerar novo JPG cropado em `product-images`). Mantemos a estratégia atual: imagem da página inteira + transform CSS via bbox, que é o que `BboxImage` já faz e funciona bem.
+Resultado: **default-deny**. Cliente sem grants não vê nada.
 
-### Resultado
-- Admin corrige enquadramentos errados em segundos, sem mexer em SQL.
-- Vitrine reflete a correção imediatamente (mesma source-of-truth `product_images.bbox`).
-- Confiabilidade percebida do AI sobe sem precisar retreinar prompt.
+## Backfill
+Para não quebrar acessos existentes ao deploy, inserir um grant `(user_id, brand_id)` para todo cliente ativo × toda marca existente. Admin então remove o que não quiser.
 
-### Detalhes técnicos
-- Migration: `ALTER TABLE product_images ADD COLUMN page_image_path text;` + backfill via `UPDATE product_images SET page_image_path = 'brand_'||p.brand_id||'/page_'||p.page_number||'.jpg' FROM products p WHERE product_images.product_id = p.id;`
-- `process-catalog-page`: ao inserir `product_images`, popular `page_image_path` com o mesmo path que já é usado no upload da página.
-- Novo arquivo: `src/components/admin/BboxEditor.tsx` (dialog + canvas overlay puro em CSS/JS, sem libs novas; pointer events para drag/resize).
-- Em `AdminBrandEdit.tsx`: trazer `product_images(id, url, bbox, position, page_image_path)` no select, expandir thumbnail para listar as N imagens em grid pequeno, cada uma com "Ajustar".
+```sql
+INSERT INTO public.client_brand_access (user_id, brand_id, created_by)
+SELECT p.id, b.id, NULL
+FROM public.profiles p
+JOIN public.user_roles ur ON ur.user_id = p.id AND ur.role = 'client'
+CROSS JOIN public.brands b
+WHERE p.active = true
+ON CONFLICT DO NOTHING;
+```
+
+## UI admin
+Em `AdminClients.tsx`, novo botão "Marcas" por linha → dialog com lista de todas as marcas e checkbox por marca. Toggle insere/deleta de `client_brand_access` direto via PostgREST (RLS admin permite). Mostra contador "N/M marcas" na coluna.
+
+## Fora de escopo
+- Grupos de clientes / templates de acesso (segue como ideia futura).
+- Mudar policies de `orders`/`order_items` — já são por `user_id`, não precisam de filtro por marca (cliente só vê os próprios pedidos de qualquer jeito).
+- Edge function intermediária para signed URLs — storage policy já cobre o filtro via path.
+
+## Resultado
+Admin escolhe explicitamente quais marcas cada cliente vê. Vitrine, busca, signed URLs de imagens e PDFs ficam todas consistentes pelo mesmo gate (`has_brand_access`). Backfill garante zero regressão para clientes atuais.
