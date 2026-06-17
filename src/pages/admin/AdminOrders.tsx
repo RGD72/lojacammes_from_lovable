@@ -8,6 +8,9 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Download, Eye } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 
 type Status = "new" | "viewed" | "confirmed" | "paid" | "cancelled";
 
@@ -42,6 +45,7 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true);
   const [brandFilter, setBrandFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [viewing, setViewing] = useState<Order | null>(null);
@@ -83,6 +87,7 @@ export default function AdminOrders() {
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       if (brandFilter !== "all" && o.brand_id !== brandFilter) return false;
+      if (clientFilter !== "all" && o.user_id !== clientFilter) return false;
       if (dateFrom && new Date(o.created_at) < new Date(dateFrom)) return false;
       if (dateTo) {
         const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
@@ -90,7 +95,15 @@ export default function AdminOrders() {
       }
       return true;
     });
-  }, [orders, brandFilter, statusFilter, dateFrom, dateTo]);
+  }, [orders, brandFilter, clientFilter, statusFilter, dateFrom, dateTo]);
+
+  const clientOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const o of orders) if (!map.has(o.user_id)) map.set(o.user_id, o.client_name);
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }, [orders]);
 
   const rowList = useMemo(() => {
     const list: { order: Order; item: OrderItem }[] = [];
@@ -145,6 +158,74 @@ export default function AdminOrders() {
     URL.revokeObjectURL(a.href);
   };
 
+  const buildRows = () =>
+    rowList.map(({ order: o, item: i }) => {
+      const total = Number(i.unit_price) * Number(i.quantity);
+      const totalC = total * (1 + brandCommission(o.brand_id) / 100);
+      return {
+        Data: new Date(o.created_at).toLocaleString("pt-BR"),
+        Cliente: o.client_name,
+        Telefone: phones[o.user_id] ?? "",
+        Vitrine: brandName(o.brand_id),
+        Ref: i.reference,
+        Descrição: i.description,
+        Cor: i.color,
+        Tam: i.size,
+        Qtd: i.quantity,
+        "Valor Unit.": Number(i.unit_price),
+        Total: total,
+        "Total c/ Comissão": totalC,
+        Status: statusLabel[i.status],
+      };
+    });
+
+  const exportXlsx = () => {
+    if (rowList.length === 0) return toast.error("Nenhum pedido para exportar");
+    const rows = buildRows();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Pedidos");
+    XLSX.writeFile(wb, `pedidos-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const exportPdf = () => {
+    if (rowList.length === 0) return toast.error("Nenhum pedido para exportar");
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    doc.setFontSize(16);
+    doc.text("Pedidos", 40, 40);
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")}`, 40, 56);
+    doc.setTextColor(0);
+    autoTable(doc, {
+      startY: 70,
+      head: [["Data","Cliente","Vitrine","Ref","Descrição","Cor","Tam","Qtd","Unit.","Total","Total c/ Com.","Status"]],
+      body: rowList.map(({ order: o, item: i }) => {
+        const total = Number(i.unit_price) * Number(i.quantity);
+        const totalC = total * (1 + brandCommission(o.brand_id) / 100);
+        return [
+          new Date(o.created_at).toLocaleString("pt-BR"),
+          o.client_name,
+          brandName(o.brand_id),
+          i.reference,
+          i.description,
+          i.color,
+          i.size,
+          String(i.quantity),
+          money(Number(i.unit_price)),
+          money(total),
+          money(totalC),
+          statusLabel[i.status],
+        ];
+      }),
+      styles: { fontSize: 7, cellPadding: 3 },
+      headStyles: { fillColor: [240, 235, 227], textColor: 40 },
+      columnStyles: { 7: { halign: "right" }, 8: { halign: "right" }, 9: { halign: "right" }, 10: { halign: "right" } },
+      margin: { left: 24, right: 24 },
+    });
+    doc.save(`pedidos-${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">
       <div className="flex items-end justify-between mb-8 gap-4 flex-wrap">
@@ -152,17 +233,32 @@ export default function AdminOrders() {
           <p className="tracking-editorial text-muted-foreground mb-2">Painel</p>
           <h1 className="font-display text-5xl">Pedidos</h1>
         </div>
-        <Button variant="outline" onClick={exportCsv}>
-          <Download className="h-4 w-4 mr-2" /> Exportar CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={exportCsv}>
+            <Download className="h-4 w-4 mr-2" /> CSV
+          </Button>
+          <Button variant="outline" onClick={exportXlsx}>
+            <Download className="h-4 w-4 mr-2" /> XLS
+          </Button>
+          <Button variant="outline" onClick={exportPdf}>
+            <Download className="h-4 w-4 mr-2" /> PDF
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         <Select value={brandFilter} onValueChange={setBrandFilter}>
           <SelectTrigger><SelectValue placeholder="Vitrine" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas as vitrines</SelectItem>
             {brands.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={clientFilter} onValueChange={setClientFilter}>
+          <SelectTrigger><SelectValue placeholder="Cliente" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os clientes</SelectItem>
+            {clientOptions.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
