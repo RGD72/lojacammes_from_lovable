@@ -189,8 +189,9 @@ function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: strin
   const [x, y, w, h] = valid ? bbox : [0, 0, 1, 1];
   const safeW = Math.max(0.05, Math.min(1, w));
   const safeH = Math.max(0.05, Math.min(1, h));
-  // object-contain: ensure the entire garment bbox fits inside the container
-  const scale = Math.min(1 / safeW, 1 / safeH);
+  // object-contain: ensure the entire garment bbox fits inside the container,
+  // with a small inner padding so the piece doesn't kiss the edges.
+  const scale = Math.min(1 / safeW, 1 / safeH) * 0.92;
   const cx = x + safeW / 2;
   const cy = y + safeH / 2;
   const tx = (0.5 - cx) * 100 * scale;

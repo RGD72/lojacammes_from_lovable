@@ -223,7 +223,9 @@ function BboxImage({ src, bbox, alt }: { src: string; bbox: number[]; alt: strin
   // Use the smaller scale so the entire bbox (and the garment inside) is fully
   // visible inside the container (object-contain behavior). This avoids
   // cropping pieces of clothing when the AI bbox is tighter than the card.
-  const scale = Math.min(scaleX, scaleY);
+  // Multiply by 0.92 so the garment never touches the edges of the card —
+  // gives the AI a forgiveness margin even when the bbox is a touch tight.
+  const scale = Math.min(scaleX, scaleY) * 0.92;
   // Translate so the bbox center aligns with the container center.
   const cx = x + safeW / 2;
   const cy = y + safeH / 2;
