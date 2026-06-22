@@ -260,6 +260,54 @@ function ListField({
   );
 }
 
+function SizeToggleField({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: string[];
+  onChange: (arr: string[]) => void;
+}) {
+  const active = new Set(value);
+  const toggle = (opt: string) => {
+    const next = new Set(active);
+    if (next.has(opt)) next.delete(opt);
+    else next.add(opt);
+    // Preserve order: keep any non-group values, then re-emit options in canonical order.
+    const groupSet = new Set(options);
+    const others = value.filter((v) => !groupSet.has(v));
+    const ordered = options.filter((o) => next.has(o));
+    onChange([...others, ...ordered]);
+  };
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] tracking-editorial text-muted-foreground">{label}</label>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((opt) => {
+          const on = active.has(opt);
+          return (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggle(opt)}
+              className={`px-2.5 py-1 rounded border text-xs min-w-10 transition ${
+                on
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProductRow({
   product,
   onSaved,
