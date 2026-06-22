@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Trash2, ArrowLeft, Save, LogOut } from "lucide-react";
+
+const NUMERIC_SIZES = ["34", "36", "38", "40", "42", "44"] as const;
+const LETTER_SIZES = ["PP", "P", "M", "G", "XG"] as const;
 import { SignedImg } from "@/lib/storage";
 import { BboxEditor } from "@/components/admin/BboxEditor";
 
@@ -320,11 +323,20 @@ function ProductRow({
           value={draft.colors}
           onChange={(arr) => setDraft({ ...draft, colors: arr })}
         />
-        <ListField
-          label="Tamanhos (vírgula)"
-          value={draft.sizes}
-          onChange={(arr) => setDraft({ ...draft, sizes: arr })}
-        />
+        <div className="col-span-2 lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <SizeToggleField
+            label="Tamanhos numéricos"
+            options={NUMERIC_SIZES as unknown as string[]}
+            value={draft.sizes}
+            onChange={(arr) => setDraft({ ...draft, sizes: arr })}
+          />
+          <SizeToggleField
+            label="Tamanhos por letra"
+            options={LETTER_SIZES as unknown as string[]}
+            value={draft.sizes}
+            onChange={(arr) => setDraft({ ...draft, sizes: arr })}
+          />
+        </div>
         <div className="flex items-end justify-end gap-2 col-span-2 lg:col-span-4">
           <Button variant="ghost" size="sm" onClick={onRemove}>
             <Trash2 className="h-4 w-4" />
