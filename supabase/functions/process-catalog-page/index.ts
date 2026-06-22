@@ -10,8 +10,13 @@ const corsHeaders = {
 const SYSTEM_PROMPT = `You analyze fashion catalog pages and extract every product visible.
 Return STRICT JSON via the provided tool. ONLY include products whose reference (SKU/code) is clearly written/visible on the page. If no reference text is visible for an item, DO NOT include it. For each included product return reference (SKU/code), description (short), material, colors (array of strings), sizes (array like S, M, L, 38, 40), price as a number (0 if unknown), and bbox: the normalized bounding box [x, y, w, h] (each value between 0 and 1, relative to page width/height) framing the SINGLE product photo that is physically CLOSEST to that reference label on the page.
 
+CRITICAL color rules:
+- Always inspect the page for explicit color options for each piece (color swatches, words like "cores", "disponível em", lists such as "preto / branco / bege", or color names printed near the reference). Populate the colors array with every option found, using the words/names exactly as printed.
+- If no explicit color option is printed, infer ONE color from the photographed garment (e.g. "preto", "off-white", "azul marinho") and return a single-item array.
+- Never return an empty colors array.
+
 CRITICAL bbox rules:
-- The bbox MUST fully contain the garment being sold (the entire piece must be visible — never cut sleeves, hems, collars or details). When the piece is worn by a model, frame the model's body so the garment is centered and complete; include enough surrounding context (head-to-knee at minimum when the photo allows). Prefer a slightly LOOSE crop over a tight one — add ~5% padding around the garment on every side.
+- The bbox MUST fully contain the garment being sold (the entire piece must be visible — never cut sleeves, hems, collars or details). The garment must be CENTERED inside the bbox. When the piece is worn by a model, frame the model's body so the garment is centered and complete; include enough surrounding context (head-to-knee at minimum when the photo allows). Prefer a LOOSE crop over a tight one — add ~10% padding around the garment on every side.
 - Each product must point to ONE distinct photo region — never reuse the same bbox for two references.
 - If a non-reference field is unknown, use empty string or empty array; price 0.
 - If you cannot determine the bbox, return [0,0,1,1].
@@ -408,7 +413,13 @@ Deno.serve(async (req) => {
         description: String(p.description ?? ""),
         material: String(p.material ?? ""),
         colors: Array.isArray(p.colors) ? p.colors.map(String) : [],
-        sizes: Array.isArray(p.sizes) ? p.sizes.map(String) : [],
+        sizes: (() => {
+          const raw = Array.isArray(p.sizes) ? p.sizes.map((s: unknown) => String(s).trim()).filter(Boolean) : [];
+          // When the PDF doesn't specify sizes, fall back to BOTH standard size
+          // groups so the admin can later toggle which options the client sees.
+          if (raw.length === 0) return ["34", "36", "38", "40", "42", "44", "PP", "P", "M", "G", "XG"];
+          return raw;
+        })(),
         price: Number(p.price ?? 0) || 0,
         bbox: (() => {
           if (!Array.isArray(p.bbox) || p.bbox.length !== 4) return [0, 0, 1, 1];
