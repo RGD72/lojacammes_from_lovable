@@ -42,20 +42,18 @@ Deno.serve(async (req) => {
 
   const admin = createClient(url, service);
 
-  // Check active client
-  const { data: profile, error: pErr } = await admin
-    .from("profiles")
-    .select("id, name, email, active")
-    .eq("id", userId)
-    .maybeSingle();
-  if (pErr || !profile?.active) return json(403, { error: "Cliente inativo" });
-
   type Payload = { brand_id?: string; items?: InItem[]; idempotency_key?: string };
   let parsed: Payload;
   try {
     parsed = await req.json();
   } catch {
     return json(400, { error: "JSON inválido" });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return json(400, { error: "JSON inválido" });
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed, "user_id")) {
+    return json(400, { error: "user_id não é permitido" });
   }
 
   const brand_id = parsed.brand_id;
@@ -71,6 +69,43 @@ Deno.serve(async (req) => {
   ) {
     return json(400, { error: "idempotency_key inválida" });
   }
+
+  // `admin` uses service_role and bypasses RLS, so authorize every order explicitly
+  // before reading products or writing orders.
+  const { data: profile, error: pErr } = await admin
+    .from("profiles")
+    .select("name, email, active")
+    .eq("id", userId)
+    .maybeSingle();
+  if (pErr) return json(500, { error: "Falha ao validar cliente" });
+  if (!profile?.active) return json(403, { error: "Não autorizado" });
+
+  const { data: clientRole, error: roleErr } = await admin
+    .from("user_roles")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("role", "client")
+    .maybeSingle();
+  if (roleErr) return json(500, { error: "Falha ao validar cliente" });
+  if (!clientRole) return json(403, { error: "Não autorizado" });
+
+  // `status` is the project's publication/availability state for brands.
+  const { data: brand, error: brandErr } = await admin
+    .from("brands")
+    .select("id, status")
+    .eq("id", brand_id)
+    .maybeSingle();
+  if (brandErr) return json(500, { error: "Falha ao validar marca" });
+  if (!brand || brand.status !== "published") return json(403, { error: "Não autorizado" });
+
+  const { data: brandAccess, error: accessErr } = await admin
+    .from("client_brand_access")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("brand_id", brand_id)
+    .maybeSingle();
+  if (accessErr) return json(500, { error: "Falha ao validar acesso" });
+  if (!brandAccess) return json(403, { error: "Não autorizado" });
 
   // If this exact key was already submitted by this user, return the existing order.
   {
@@ -195,9 +230,17 @@ Deno.serve(async (req) => {
   }
 
   // Notify admin (best-effort)
-  admin.functions
-    .invoke("notify-new-order", { body: { order_id: order.id } })
-    .catch(() => {});
+  const internalSecret = Deno.env.get("INTERNAL_FUNCTION_SECRET");
+  if (!internalSecret) {
+    console.error("INTERNAL_FUNCTION_SECRET is not configured; notification was not sent");
+  } else {
+    admin.functions
+      .invoke("notify-new-order", {
+        body: { order_id: order.id },
+        headers: { "x-internal-secret": internalSecret },
+      })
+      .catch(() => {});
+  }
 
   return json(200, {
     order_id: order.id,

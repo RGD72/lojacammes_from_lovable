@@ -4,11 +4,22 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-secret",
 };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
+  const internalSecret = Deno.env.get("INTERNAL_FUNCTION_SECRET");
+  if (!internalSecret) {
+    console.error("INTERNAL_FUNCTION_SECRET is not configured");
+    return json({ error: "Internal service unavailable" }, 503);
+  }
+
+  const providedSecret = req.headers.get("x-internal-secret");
+  if (!providedSecret) return json({ error: "Unauthorized" }, 401);
+  if (!secretsMatch(providedSecret, internalSecret)) return json({ error: "Forbidden" }, 403);
 
   try {
     const { order_id } = await req.json();
@@ -88,7 +99,7 @@ Deno.serve(async (req) => {
     return json({ ok: true, emailed: true });
   } catch (e) {
     console.error("notify-new-order error:", e);
-    return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
+    return json({ error: "Unable to process notification" }, 500);
   }
 });
 
@@ -103,4 +114,12 @@ function esc(s: string) {
 }
 function money(n: number | string) {
   return Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function secretsMatch(provided: string, expected: string) {
+  let mismatch = provided.length ^ expected.length;
+  for (let index = 0; index < expected.length; index += 1) {
+    mismatch |= expected.charCodeAt(index) ^ (provided.charCodeAt(index) || 0);
+  }
+  return mismatch === 0;
 }
